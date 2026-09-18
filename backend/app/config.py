@@ -22,7 +22,10 @@ class Settings(BaseSettings):
 
     # --- Gemini ---
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"
+    # flash-lite has a higher free-tier daily limit than flash — better for a
+    # public demo. Callers may also supply their own key per request (BYOK),
+    # which is used in place of gemini_api_key for that call.
+    gemini_model: str = "gemini-2.5-flash-lite"
     gemini_embed_model: str = "gemini-embedding-001"
     # gemini-embedding-001 defaults to 3072 dims but supports output_dimensionality;
     # we pin 768 to keep vectors compact and match the pgvector schema.
@@ -79,12 +82,34 @@ class Settings(BaseSettings):
     # frontend URL here (e.g. https://devpilot.vercel.app) via ALLOWED_ORIGINS.
     allowed_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
+    # --- Auth (email/password) ---
+    # A full Postgres connection string for the user store. On a hosted DB
+    # (Supabase, Render Postgres) set DATABASE_URL to the provided URL; locally
+    # it falls back to the postgres_* fields above. Auth is only offered when a
+    # usable DSN is present (auth_available).
+    database_url: str = ""
+    # Signs the login JWTs. MUST be overridden in production (env JWT_SECRET) —
+    # anyone who knows this value can mint valid sessions.
+    jwt_secret: str = "dev-insecure-change-me"
+    jwt_expire_hours: int = 168  # 7 days
+
     @property
     def pg_dsn(self) -> str:
         return (
             f"postgresql://{self.postgres_user}:{self.postgres_password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         )
+
+    @property
+    def auth_dsn(self) -> str:
+        """DSN for the auth/user store: explicit DATABASE_URL wins, else pg_dsn."""
+        return self.database_url or self.pg_dsn
+
+    @property
+    def auth_available(self) -> bool:
+        """Auth is offered only when a real DATABASE_URL is configured. Without
+        it (plain local dev) the app runs open, with no login gate."""
+        return bool(self.database_url)
 
 
 @lru_cache

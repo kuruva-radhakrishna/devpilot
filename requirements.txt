@@ -10,9 +10,14 @@ google-generativeai==0.8.3
 
 # --- RAG / vector store ---
 numpy==2.1.3
-# pgvector backend (optional; only needed if VECTOR_BACKEND=pgvector)
+# psycopg also backs the email/password user store (app/auth) when DATABASE_URL
+# is set; pgvector is only needed for VECTOR_BACKEND=pgvector.
 psycopg[binary]==3.2.3
 pgvector==0.3.6
+
+# --- Auth (email/password login) ---
+bcrypt==4.2.1
+PyJWT==2.10.1
 
 # --- Code parsing ---
 # tree-sitter is optional; the chunker falls back to a regex/line splitter

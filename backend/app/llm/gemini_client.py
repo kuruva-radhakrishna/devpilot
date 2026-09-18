@@ -20,7 +20,12 @@ from app.config import get_settings
 from app.llm import usage
 from app.obs import tracing
 
-_configured = False
+# The Gemini SDK configures its key on a process-global client, so we track the
+# key currently applied and only re-apply when it changes (per request, under
+# BYOK). Concurrency caveat: if two requests with *different* keys are processed
+# in true parallel this global could interleave — acceptable for a demo, where
+# usage is effectively sequential. A production build would use a per-key client.
+_active_key: str | None = None
 
 # Transient errors worth retrying with backoff.
 _RETRYABLE = (
@@ -79,18 +84,28 @@ def _record_usage(resp) -> None:
     tracing.add_attrs(prompt_tokens=pt, output_tokens=ot, total_tokens=tt)
 
 
-def _ensure_configured() -> None:
-    global _configured
-    if _configured:
-        return
-    settings = get_settings()
-    if not settings.gemini_api_key:
+def _effective_key() -> str:
+    """The key to use for this call: the request's BYOK key if present, else the
+    server's configured GEMINI_API_KEY."""
+    from app.llm.keyctx import get_request_key
+
+    key = get_request_key() or get_settings().gemini_api_key
+    if not key:
         raise RuntimeError(
-            "GEMINI_API_KEY is not set. Copy .env.example to .env and add your key "
-            "from https://aistudio.google.com/app/apikey"
+            "No Gemini API key available. Either set GEMINI_API_KEY on the server, "
+            "or paste your own key in the app (Settings → API key). Get one free at "
+            "https://aistudio.google.com/app/apikey"
         )
-    genai.configure(api_key=settings.gemini_api_key)
-    _configured = True
+    return key
+
+
+def _ensure_configured() -> None:
+    """Point the SDK at the effective key, reconfiguring only when it changes."""
+    global _active_key
+    key = _effective_key()
+    if key != _active_key:
+        genai.configure(api_key=key)
+        _active_key = key
 
 
 # --------------------------------------------------------------------------- #
