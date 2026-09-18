@@ -5,9 +5,12 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app import registry
+from app.auth.deps import BoundKey, CurrentUser
 from app.rag.ingest import ingest_repo
 
-router = APIRouter(prefix="/api/repos", tags=["repos"])
+# BoundKey binds the request's BYOK Gemini key; CurrentUser requires a logged-in
+# caller (a no-op that passes through when auth isn't configured).
+router = APIRouter(prefix="/api/repos", tags=["repos"], dependencies=[BoundKey, CurrentUser])
 
 
 class IngestRequest(BaseModel):

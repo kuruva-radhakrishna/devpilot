@@ -3,6 +3,38 @@
 // falls back to the local dev server.
 const BASE = (import.meta.env.VITE_API_BASE ?? "http://localhost:8000").replace(/\/$/, "");
 
+// --- Local-only credential storage --------------------------------------
+// The session token and the user's own Gemini key live ONLY in this browser
+// (localStorage). The key is never sent to our database — only forwarded to the
+// backend per request as the X-Gemini-Key header so calls use the visitor's own
+// free quota. Wrapped in try/catch so private-mode / blocked storage degrades.
+const TOKEN_KEY = "devpilot_token";
+const GEMINI_KEY = "devpilot_gemini_key";
+
+function ls(key: string): string {
+  try {
+    return localStorage.getItem(key) ?? "";
+  } catch {
+    return "";
+  }
+}
+function lsSet(key: string, value: string) {
+  try {
+    if (value) localStorage.setItem(key, value);
+    else localStorage.removeItem(key);
+  } catch {
+    /* ignore */
+  }
+}
+
+export const getToken = () => ls(TOKEN_KEY);
+export const setToken = (t: string) => lsSet(TOKEN_KEY, t);
+export const clearToken = () => lsSet(TOKEN_KEY, "");
+export const getApiKey = () => ls(GEMINI_KEY);
+export const setApiKey = (k: string) => lsSet(GEMINI_KEY, k.trim());
+export const clearApiKey = () => lsSet(GEMINI_KEY, "");
+
+// --- Types ---------------------------------------------------------------
 export interface RepoMeta {
   repo_id: string;
   source: string;
@@ -23,25 +55,74 @@ export interface AskResponse {
   tool_calls: ToolCall[];
 }
 
-async function post<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(BASE + path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+export interface Health {
+  status: string;
+  provider: string;
+  model: string;
+  auth_enabled: boolean;
+  gemini_key_set: boolean;
+}
+
+/** Thrown on a 401 so the UI can drop the session and show the login screen. */
+export class AuthError extends Error {}
+
+// --- Request plumbing ----------------------------------------------------
+function headers(json = true): Record<string, string> {
+  const h: Record<string, string> = {};
+  if (json) h["Content-Type"] = "application/json";
+  const token = getToken();
+  if (token) h["Authorization"] = `Bearer ${token}`;
+  const key = getApiKey();
+  if (key) h["X-Gemini-Key"] = key;
+  return h;
+}
+
+async function handle<T>(res: Response): Promise<T> {
+  if (res.status === 401) {
+    clearToken();
+    const d = await res.json().catch(() => ({ detail: "Session expired." }));
+    throw new AuthError(d.detail || "Please log in again.");
+  }
   if (!res.ok) {
-    const detail = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(detail.detail || "Request failed");
+    const d = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(d.detail || "Request failed");
   }
   return res.json();
 }
 
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(BASE + path, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify(body),
+  });
+  return handle<T>(res);
+}
+
+// --- Auth ----------------------------------------------------------------
+export interface AuthResponse {
+  token: string;
+  email: string;
+}
+
+export const register = (email: string, password: string) =>
+  post<AuthResponse>("/api/auth/register", { email, password });
+
+export const login = (email: string, password: string) =>
+  post<AuthResponse>("/api/auth/login", { email, password });
+
+export const getHealth = async (): Promise<Health> => {
+  const res = await fetch(BASE + "/api/health");
+  return res.json();
+};
+
+// --- App API -------------------------------------------------------------
 export const ingestRepo = (source: string) =>
   post<RepoMeta>("/api/repos/ingest", { source });
 
 export const listRepos = async (): Promise<Record<string, RepoMeta>> => {
-  const res = await fetch(BASE + "/api/repos");
-  const data = await res.json();
+  const res = await fetch(BASE + "/api/repos", { headers: headers(false) });
+  const data = await handle<{ repos?: Record<string, RepoMeta> }>(res);
   return data.repos ?? {};
 };
 

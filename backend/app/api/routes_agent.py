@@ -7,8 +7,11 @@ from pydantic import BaseModel
 from app import registry
 from app.agent.repair import run_repair
 from app.agent.runtime import run_agent
+from app.auth.deps import BoundKey, CurrentUser
 
-router = APIRouter(prefix="/api/agent", tags=["agent"])
+# BoundKey binds the request's BYOK Gemini key; CurrentUser requires a logged-in
+# caller (a no-op that passes through when auth isn't configured).
+router = APIRouter(prefix="/api/agent", tags=["agent"], dependencies=[BoundKey, CurrentUser])
 
 
 class AskRequest(BaseModel):
