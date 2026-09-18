@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     postgres_port: int = 5432
     postgres_db: str = "devpilot"
     postgres_user: str = "devpilot"
-    postgres_password: str = "devpilot"
+    postgres_password: str = ""  # set via POSTGRES_PASSWORD env; no hardcoded default
 
     # --- Agent ---
     agent_max_steps: int = 8
