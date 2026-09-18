@@ -1,5 +1,7 @@
 // Thin typed client for the DevPilot backend.
-const BASE = "http://localhost:8000";
+// Set VITE_API_BASE at build time (e.g. on Vercel) to your deployed backend URL;
+// falls back to the local dev server.
+const BASE = (import.meta.env.VITE_API_BASE ?? "http://localhost:8000").replace(/\/$/, "");
 
 export interface RepoMeta {
   repo_id: string;

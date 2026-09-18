@@ -1,0 +1,24 @@
+# Render Blueprint for the DevPilot backend (Docker web service).
+# Deploy: Render Dashboard -> New -> Blueprint -> pick this repo. Then set the
+# two secret env vars (GEMINI_API_KEY, ALLOWED_ORIGINS) in the dashboard.
+services:
+  - type: web
+    name: devpilot-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: GEMINI_API_KEY        # your AIza... key — paste in the dashboard
+        sync: false
+      - key: ALLOWED_ORIGINS       # set to your Vercel URL, e.g. https://devpilot.vercel.app
+        sync: false
+      - key: LLM_PROVIDER
+        value: gemini
+      - key: SANDBOX_BACKEND
+        value: local
+      - key: VECTOR_BACKEND
+        value: memory
+      - key: TRACE_ENABLED
+        value: "true"

@@ -1,0 +1,11 @@
+.git
+frontend
+**/__pycache__
+**/*.pyc
+.venv
+venv
+backend/data
+backend/traces
+backend/.workspaces
+backend/.repo_cache
+backend/eval/results

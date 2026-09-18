@@ -74,6 +74,11 @@ class Settings(BaseSettings):
     trace_enabled: bool = True
     traces_dir: str = "./traces"
 
+    # --- CORS ---
+    # Comma-separated browser origins allowed to call the API. Add your deployed
+    # frontend URL here (e.g. https://devpilot.vercel.app) via ALLOWED_ORIGINS.
+    allowed_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+
     @property
     def pg_dsn(self) -> str:
         return (
