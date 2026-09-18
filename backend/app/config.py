@@ -1,0 +1,87 @@
+"""Central configuration, loaded from environment / .env.
+
+Everything that varies between machines or deployments lives here so the rest
+of the code never reads os.environ directly.
+"""
+from __future__ import annotations
+
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
+
+    # --- LLM provider selection ---
+    # "gemini" (default) | "ollama". The agent, RAG, repair loop, eval, tracing,
+    # MCP and sandbox are all provider-independent — only this picks the backend.
+    llm_provider: str = "gemini"
+
+    # --- Gemini ---
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
+    gemini_embed_model: str = "gemini-embedding-001"
+    # gemini-embedding-001 defaults to 3072 dims but supports output_dimensionality;
+    # we pin 768 to keep vectors compact and match the pgvector schema.
+    embed_dim: int = 768
+
+    # --- Ollama (local models; no API key, no quota) ---
+    ollama_host: str = "http://localhost:11434"
+    ollama_model: str = "qwen2.5-coder:7b"
+    ollama_embed_model: str = "nomic-embed-text"  # 768-dim, matches embed_dim
+
+    # --- Vector store ---
+    vector_backend: str = "memory"  # "memory" | "pgvector"
+
+    # --- Postgres (pgvector backend) ---
+    postgres_host: str = "localhost"
+    postgres_port: int = 5432
+    postgres_db: str = "devpilot"
+    postgres_user: str = "devpilot"
+    postgres_password: str = "devpilot"
+
+    # --- Agent ---
+    agent_max_steps: int = 8
+    prompt_version: str = "v1"
+
+    # --- Retrieval ---
+    retrieval_top_k: int = 8
+    repo_cache_dir: str = "./.repo_cache"
+    # Dependency-aware expansion: after hybrid retrieval, pull in files that the
+    # top hits import / that import them, so a bug one hop from the symptom
+    # (root-cause-differs cases) is surfaced. Toggle to measure its effect.
+    retrieval_dependency_expansion: bool = True
+
+    # --- Sandbox (test execution) ---
+    # "docker"   -> isolated container (recommended; real isolation)
+    # "local"    -> subprocess on the host (DEV ONLY, NOT isolated — see warning)
+    # "disabled" -> run_tests returns a stub (the old behavior)
+    sandbox_backend: str = "docker"
+    sandbox_image: str = "devpilot-sandbox:latest"
+    sandbox_memory: str = "512m"
+    sandbox_cpus: str = "1.0"
+    sandbox_pids_limit: int = 256
+    sandbox_timeout: int = 120  # seconds for the test phase
+    workspace_dir: str = "./.workspaces"
+
+    # --- Repair loop ---
+    repair_max_iters: int = 3  # patch attempts before giving up
+
+    # --- Observability (tracing) ---
+    trace_enabled: bool = True
+    traces_dir: str = "./traces"
+
+    @property
+    def pg_dsn(self) -> str:
+        return (
+            f"postgresql://{self.postgres_user}:{self.postgres_password}"
+            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+        )
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

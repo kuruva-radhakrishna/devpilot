@@ -1,0 +1,386 @@
+{
+  "run_id": "20260913-231715-retrieval",
+  "provider": "gemini",
+  "embed_model": "gemini-embedding-001",
+  "top_k": 5,
+  "mode": "retrieval-only",
+  "rows": [
+    {
+      "id": "repair_tax",
+      "type": "repair",
+      "category": "retrieval-distractor",
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "file_hit": 1
+    },
+    {
+      "id": "repair_discount",
+      "type": "repair",
+      "category": "retrieval-distractor",
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "file_hit": 1
+    },
+    {
+      "id": "repair_shipping",
+      "type": "repair",
+      "category": "retrieval-distractor",
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "file_hit": 1
+    },
+    {
+      "id": "repair_currency",
+      "type": "repair",
+      "category": "retrieval-distractor",
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "file_hit": 1
+    },
+    {
+      "id": "repair_loyalty",
+      "type": "repair",
+      "category": "retrieval-distractor",
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "file_hit": 1
+    },
+    {
+      "id": "repair_sanitize",
+      "type": "repair",
+      "category": "misleading-names",
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "file_hit": 1
+    },
+    {
+      "id": "repair_sort_price",
+      "type": "repair",
+      "category": "misleading-names",
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "file_hit": 1
+    },
+    {
+      "id": "repair_in_stock",
+      "type": "repair",
+      "category": "misleading-names",
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "file_hit": 1
+    },
+    {
+      "id": "repair_cache",
+      "type": "repair",
+      "category": "misleading-names",
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "file_hit": 1
+    },
+    {
+      "id": "repair_report_mean",
+      "type": "repair",
+      "category": "root-cause-differs",
+      "recall_at_k": 0.0,
+      "mrr": 0.0,
+      "file_hit": 0
+    },
+    {
+      "id": "repair_dashboard_days",
+      "type": "repair",
+      "category": "root-cause-differs",
+      "recall_at_k": 1.0,
+      "mrr": 0.5,
+      "file_hit": 1
+    },
+    {
+      "id": "repair_summary_truncate",
+      "type": "repair",
+      "category": "root-cause-differs",
+      "recall_at_k": 1.0,
+      "mrr": 0.3333333333333333,
+      "file_hit": 1
+    },
+    {
+      "id": "repair_invoice_money",
+      "type": "repair",
+      "category": "root-cause-differs",
+      "recall_at_k": 1.0,
+      "mrr": 0.3333333333333333,
+      "file_hit": 1
+    },
+    {
+      "id": "repair_cart_dollars",
+      "type": "repair",
+      "category": "multi-file-dependency",
+      "recall_at_k": 1.0,
+      "mrr": 0.5,
+      "file_hit": 1
+    },
+    {
+      "id": "repair_billing_rate",
+      "type": "repair",
+      "category": "multi-file-dependency",
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "file_hit": 1
+    },
+    {
+      "id": "repair_reserve_exact",
+      "type": "repair",
+      "category": "multi-file-dependency",
+      "recall_at_k": 1.0,
+      "mrr": 0.5,
+      "file_hit": 1
+    },
+    {
+      "id": "repair_greeting_key",
+      "type": "repair",
+      "category": "multi-file-dependency",
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "file_hit": 1
+    },
+    {
+      "id": "repair_authz",
+      "type": "repair",
+      "category": "security",
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "file_hit": 1
+    },
+    {
+      "id": "repair_path_traversal",
+      "type": "repair",
+      "category": "security",
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "file_hit": 1
+    },
+    {
+      "id": "repair_sql_injection",
+      "type": "repair",
+      "category": "security",
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "file_hit": 1
+    },
+    {
+      "id": "repair_input_validation",
+      "type": "repair",
+      "category": "security",
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "file_hit": 1
+    },
+    {
+      "id": "repair_n_plus_one",
+      "type": "repair",
+      "category": "performance",
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "file_hit": 1
+    },
+    {
+      "id": "repair_missing_cache",
+      "type": "repair",
+      "category": "performance",
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "file_hit": 1
+    },
+    {
+      "id": "repair_redundant_reads",
+      "type": "repair",
+      "category": "performance",
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "file_hit": 1
+    },
+    {
+      "id": "repair_normalize_email",
+      "type": "repair",
+      "category": "single-file-logic",
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "file_hit": 1
+    },
+    {
+      "id": "repair_format_phone",
+      "type": "repair",
+      "category": "single-file-logic",
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "file_hit": 1
+    },
+    {
+      "id": "repair_pagination",
+      "type": "repair",
+      "category": "regression",
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "file_hit": 1
+    },
+    {
+      "id": "repair_slug",
+      "type": "repair",
+      "category": "regression",
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "file_hit": 1
+    },
+    {
+      "id": "repair_password_rules",
+      "type": "repair",
+      "category": "multi-iteration",
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "file_hit": 1
+    },
+    {
+      "id": "repair_date_parse",
+      "type": "repair",
+      "category": "multi-iteration",
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "file_hit": 1
+    },
+    {
+      "id": "repair_money_format",
+      "type": "repair",
+      "category": "multi-iteration",
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "file_hit": 1
+    },
+    {
+      "id": "repair_missing_address",
+      "type": "repair",
+      "category": "single-file-logic",
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "file_hit": 1
+    },
+    {
+      "id": "repair_overdraft",
+      "type": "repair",
+      "category": "single-file-logic",
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "file_hit": 1
+    },
+    {
+      "id": "repair_exact_stock",
+      "type": "repair",
+      "category": "single-file-logic",
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "file_hit": 1
+    },
+    {
+      "id": "repair_double_discount",
+      "type": "repair",
+      "category": "regression",
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "file_hit": 1
+    },
+    {
+      "id": "repair_expired_token",
+      "type": "repair",
+      "category": "multi-file-dependency",
+      "recall_at_k": 1.0,
+      "mrr": 0.5,
+      "file_hit": 1
+    },
+    {
+      "id": "qa_order_city",
+      "type": "qa",
+      "category": "repository-qa",
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "file_hit": 1
+    },
+    {
+      "id": "qa_token_validation",
+      "type": "qa",
+      "category": "repository-qa",
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "file_hit": 1
+    },
+    {
+      "id": "qa_shopcore_tax",
+      "type": "qa",
+      "category": "repository-qa",
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "file_hit": 1
+    },
+    {
+      "id": "qa_webapp_cart",
+      "type": "qa",
+      "category": "repository-qa",
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "file_hit": 1
+    }
+  ],
+  "aggregates": {
+    "recall_at_k": 0.975,
+    "mrr": 0.892,
+    "file_hit": 0.975,
+    "per_category": {
+      "misleading-names": {
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "file_hit": 1.0
+      },
+      "multi-file-dependency": {
+        "recall_at_k": 1.0,
+        "mrr": 0.7,
+        "file_hit": 1.0
+      },
+      "multi-iteration": {
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "file_hit": 1.0
+      },
+      "performance": {
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "file_hit": 1.0
+      },
+      "regression": {
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "file_hit": 1.0
+      },
+      "repository-qa": {
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "file_hit": 1.0
+      },
+      "retrieval-distractor": {
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "file_hit": 1.0
+      },
+      "root-cause-differs": {
+        "recall_at_k": 0.75,
+        "mrr": 0.292,
+        "file_hit": 0.75
+      },
+      "security": {
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "file_hit": 1.0
+      },
+      "single-file-logic": {
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "file_hit": 1.0
+      }
+    }
+  }
+}

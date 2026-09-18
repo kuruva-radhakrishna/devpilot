@@ -1,0 +1,97 @@
+{
+  "trace_id": "bf0984f2c7064915",
+  "name": "repair.run",
+  "start_ms": 1789316434533.008,
+  "duration_ms": 9049.76,
+  "status": "ok",
+  "spans": [
+    {
+      "span_id": "c84c35a6585b",
+      "parent_id": null,
+      "name": "repair.run",
+      "start_ms": 1789316434533.0557,
+      "duration_ms": 9049.76,
+      "status": "ok",
+      "error": null,
+      "attributes": {
+        "repo_id": "bank_app",
+        "bug": "Withdrawing more than the balance should raise ValueError.",
+        "prompt_version": "v1"
+      }
+    },
+    {
+      "span_id": "42a7a85fce75",
+      "parent_id": "c84c35a6585b",
+      "name": "run_tests",
+      "start_ms": 1789316436573.8694,
+      "duration_ms": 3355.81,
+      "status": "ok",
+      "error": null,
+      "attributes": {
+        "phase": "baseline",
+        "summary": "2 passed, 1 failed, 0 errors",
+        "passed": false
+      }
+    },
+    {
+      "span_id": "463d3363bcca",
+      "parent_id": "c84c35a6585b",
+      "name": "repair.iteration",
+      "start_ms": 1789316439929.8635,
+      "duration_ms": 3652.92,
+      "status": "ok",
+      "error": null,
+      "attributes": {
+        "attempt": 1,
+        "outcome": "passed",
+        "files_changed": [
+          "account.py"
+        ]
+      }
+    },
+    {
+      "span_id": "d53afee82f12",
+      "parent_id": "463d3363bcca",
+      "name": "llm.generate",
+      "start_ms": 1789316439932.0618,
+      "duration_ms": 0.06,
+      "status": "ok",
+      "error": null,
+      "attributes": {
+        "model": "gemini-2.5-flash",
+        "temperature": 0.1,
+        "prompt_tokens": 120,
+        "output_tokens": 45,
+        "total_tokens": 165
+      }
+    },
+    {
+      "span_id": "712385cb64a9",
+      "parent_id": "463d3363bcca",
+      "name": "apply_patch",
+      "start_ms": 1789316439932.7065,
+      "duration_ms": 7.34,
+      "status": "ok",
+      "error": null,
+      "attributes": {
+        "files": [
+          "account.py"
+        ]
+      }
+    },
+    {
+      "span_id": "4a4e694357f8",
+      "parent_id": "463d3363bcca",
+      "name": "run_tests",
+      "start_ms": 1789316440379.3035,
+      "duration_ms": 2782.98,
+      "status": "ok",
+      "error": null,
+      "attributes": {
+        "phase": "verify",
+        "summary": "3 passed, 0 failed, 0 errors",
+        "passed": true
+      }
+    }
+  ]
+}

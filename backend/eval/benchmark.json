@@ -1,0 +1,669 @@
+{
+  "description": "DevPilot Benchmark v2 \u2014 deterministic repository-repair + QA tasks across 9 categories, each pinned to a bundled fixture repo with a real failing test. Repair cases are scored against a no-RAG baseline and prompt versions v1/v2/v3.",
+  "repos": {
+    "sample_app": "examples/sample_app",
+    "bank_app": "examples/bank_app",
+    "cart_app": "examples/cart_app",
+    "auth_app": "examples/auth_app",
+    "inventory_app": "examples/inventory_app",
+    "shopcore": "examples/shopcore",
+    "webapp": "examples/webapp",
+    "securestore": "examples/securestore",
+    "datapipe": "examples/datapipe",
+    "formsvc": "examples/formsvc"
+  },
+  "cases": [
+    {
+      "id": "repair_tax",
+      "type": "repair",
+      "category": "retrieval-distractor",
+      "repo": "shopcore",
+      "bug": "Adding tax to an amount returns the wrong total (it returns just the tax, not amount plus tax).",
+      "expected_files": [
+        "tax.py"
+      ],
+      "test_path": "tests/test_tax.py",
+      "expected_test": "tests/test_tax.py::test_add_tax",
+      "expected_keywords": [
+        "tax",
+        "amount"
+      ]
+    },
+    {
+      "id": "repair_discount",
+      "type": "repair",
+      "category": "retrieval-distractor",
+      "repo": "shopcore",
+      "bug": "Applying a 10 percent discount to a price gives the wrong result; it subtracts 10 instead of 10 percent.",
+      "expected_files": [
+        "discount.py"
+      ],
+      "test_path": "tests/test_discount.py",
+      "expected_test": "tests/test_discount.py::test_apply_discount",
+      "expected_keywords": [
+        "discount",
+        "percent"
+      ]
+    },
+    {
+      "id": "repair_shipping",
+      "type": "repair",
+      "category": "retrieval-distractor",
+      "repo": "shopcore",
+      "bug": "An order weighing exactly 10kg is charged for shipping, but 10kg should qualify for free shipping.",
+      "expected_files": [
+        "shipping.py"
+      ],
+      "test_path": "tests/test_shipping.py",
+      "expected_test": "tests/test_shipping.py::test_free_at_threshold",
+      "expected_keywords": [
+        "shipping",
+        "weight"
+      ]
+    },
+    {
+      "id": "repair_currency",
+      "type": "repair",
+      "category": "retrieval-distractor",
+      "repo": "shopcore",
+      "bug": "Converting a dollar amount like 1.15 to cents returns 114 instead of 115 due to float truncation.",
+      "expected_files": [
+        "currency.py"
+      ],
+      "test_path": "tests/test_currency.py",
+      "expected_test": "tests/test_currency.py::test_to_cents_rounding",
+      "expected_keywords": [
+        "cents",
+        "round"
+      ]
+    },
+    {
+      "id": "repair_loyalty",
+      "type": "repair",
+      "category": "retrieval-distractor",
+      "repo": "shopcore",
+      "bug": "Loyalty points are wildly too high; spending 95 should give 9 points (1 per whole 10 spent) but gives far more.",
+      "expected_files": [
+        "loyalty.py"
+      ],
+      "test_path": "tests/test_loyalty.py",
+      "expected_test": "tests/test_loyalty.py::test_points",
+      "expected_keywords": [
+        "points",
+        "amount"
+      ]
+    },
+    {
+      "id": "repair_sanitize",
+      "type": "repair",
+      "category": "misleading-names",
+      "repo": "shopcore",
+      "bug": "sanitize_username does not actually sanitize the username; it should trim whitespace and lowercase it.",
+      "expected_files": [
+        "validators.py"
+      ],
+      "test_path": "tests/test_validators.py",
+      "expected_test": "tests/test_validators.py::test_sanitize",
+      "expected_keywords": [
+        "sanitize",
+        "username"
+      ]
+    },
+    {
+      "id": "repair_sort_price",
+      "type": "repair",
+      "category": "misleading-names",
+      "repo": "shopcore",
+      "bug": "sort_by_price returns items ordered by name instead of by price.",
+      "expected_files": [
+        "sorting.py"
+      ],
+      "test_path": "tests/test_sorting.py",
+      "expected_test": "tests/test_sorting.py::test_sort_by_price",
+      "expected_keywords": [
+        "sort",
+        "price"
+      ]
+    },
+    {
+      "id": "repair_in_stock",
+      "type": "repair",
+      "category": "misleading-names",
+      "repo": "shopcore",
+      "bug": "is_in_stock returns True when quantity is zero and False when items are available; the logic is inverted.",
+      "expected_files": [
+        "stock.py"
+      ],
+      "test_path": "tests/test_stock.py",
+      "expected_test": "tests/test_stock.py::test_out_of_stock",
+      "expected_keywords": [
+        "stock",
+        "quantity"
+      ]
+    },
+    {
+      "id": "repair_cache",
+      "type": "repair",
+      "category": "misleading-names",
+      "repo": "shopcore",
+      "bug": "get_or_compute recomputes on every call instead of caching the result by key.",
+      "expected_files": [
+        "cache_util.py"
+      ],
+      "test_path": "tests/test_cache_util.py",
+      "expected_test": "tests/test_cache_util.py::test_caches",
+      "expected_keywords": [
+        "cache",
+        "key"
+      ]
+    },
+    {
+      "id": "repair_report_mean",
+      "type": "repair",
+      "category": "root-cause-differs",
+      "repo": "shopcore",
+      "bug": "average_rating in report.py returns a value that is too low. The failing test calls report.average_rating but the actual bug is elsewhere.",
+      "expected_files": [
+        "stats.py"
+      ],
+      "test_path": "tests/test_report.py",
+      "expected_test": "tests/test_report.py::test_average",
+      "expected_keywords": [
+        "mean",
+        "average"
+      ]
+    },
+    {
+      "id": "repair_dashboard_days",
+      "type": "repair",
+      "category": "root-cause-differs",
+      "repo": "shopcore",
+      "bug": "span_days in dashboard.py is off by one. The test exercises dashboard but the defect is in the date helper it calls.",
+      "expected_files": [
+        "dates.py"
+      ],
+      "test_path": "tests/test_dashboard.py",
+      "expected_test": "tests/test_dashboard.py::test_span",
+      "expected_keywords": [
+        "days",
+        "between"
+      ]
+    },
+    {
+      "id": "repair_summary_truncate",
+      "type": "repair",
+      "category": "root-cause-differs",
+      "repo": "shopcore",
+      "bug": "preview in summary.py returns one character too many. The test calls summary.preview but the bug is in the text helper.",
+      "expected_files": [
+        "text.py"
+      ],
+      "test_path": "tests/test_summary.py",
+      "expected_test": "tests/test_summary.py::test_preview_len",
+      "expected_keywords": [
+        "truncate",
+        "length"
+      ]
+    },
+    {
+      "id": "repair_invoice_money",
+      "type": "repair",
+      "category": "root-cause-differs",
+      "repo": "shopcore",
+      "bug": "line_total in invoice.py returns ten times too much. The failing test uses invoice but the conversion bug is in the money helper.",
+      "expected_files": [
+        "money.py"
+      ],
+      "test_path": "tests/test_invoice.py",
+      "expected_test": "tests/test_invoice.py::test_line_total",
+      "expected_keywords": [
+        "cents",
+        "money"
+      ]
+    },
+    {
+      "id": "repair_cart_dollars",
+      "type": "repair",
+      "category": "multi-file-dependency",
+      "repo": "webapp",
+      "bug": "cart_value returns a number 100x too large. cart_service sums catalog.price_of, which returns cents while callers expect dollars.",
+      "expected_files": [
+        "catalog.py"
+      ],
+      "test_path": "tests/test_cart_service.py",
+      "expected_test": "tests/test_cart_service.py::test_cart_value_dollars",
+      "expected_keywords": [
+        "price",
+        "dollars",
+        "cents"
+      ]
+    },
+    {
+      "id": "repair_billing_rate",
+      "type": "repair",
+      "category": "multi-file-dependency",
+      "repo": "webapp",
+      "bug": "charge(100) is billed at the high rate. billing_service uses rates.rate_for, whose tier boundary is off \u2014 100 units should use the low rate.",
+      "expected_files": [
+        "rates.py"
+      ],
+      "test_path": "tests/test_billing_service.py",
+      "expected_test": "tests/test_billing_service.py::test_charge_at_boundary",
+      "expected_keywords": [
+        "rate",
+        "boundary",
+        "units"
+      ]
+    },
+    {
+      "id": "repair_reserve_exact",
+      "type": "repair",
+      "category": "multi-file-dependency",
+      "repo": "webapp",
+      "bug": "can_reserve fails when reserving exactly the available stock. order_service calls inventory_repo.available, which uses a strict greater-than.",
+      "expected_files": [
+        "inventory_repo.py"
+      ],
+      "test_path": "tests/test_order_service.py",
+      "expected_test": "tests/test_order_service.py::test_reserve_exact",
+      "expected_keywords": [
+        "available",
+        "stock"
+      ]
+    },
+    {
+      "id": "repair_greeting_key",
+      "type": "repair",
+      "category": "multi-file-dependency",
+      "repo": "webapp",
+      "bug": "greet produces 'Hello, !' with the name missing. notify_service passes {'name': ...} but templates.render_greeting reads the wrong key.",
+      "expected_files": [
+        "templates.py"
+      ],
+      "test_path": "tests/test_notify_service.py",
+      "expected_test": "tests/test_notify_service.py::test_greet",
+      "expected_keywords": [
+        "template",
+        "name",
+        "key"
+      ]
+    },
+    {
+      "id": "repair_authz",
+      "type": "repair",
+      "category": "security",
+      "repo": "securestore",
+      "bug": "delete_resource performs no authorization check, so any user (not just admins) can delete resources. Non-admins must be denied.",
+      "expected_files": [
+        "authz.py"
+      ],
+      "test_path": "tests/test_authz.py",
+      "expected_test": "tests/test_authz.py::test_non_admin_denied",
+      "expected_keywords": [
+        "authorization",
+        "admin",
+        "permission"
+      ]
+    },
+    {
+      "id": "repair_path_traversal",
+      "type": "repair",
+      "category": "security",
+      "repo": "securestore",
+      "bug": "safe_read is vulnerable to path traversal: a name like '../secret.txt' escapes the base directory. It must reject paths that escape base.",
+      "expected_files": [
+        "paths.py"
+      ],
+      "test_path": "tests/test_paths.py",
+      "expected_test": "tests/test_paths.py::test_traversal_blocked",
+      "expected_keywords": [
+        "path",
+        "traversal",
+        "base"
+      ]
+    },
+    {
+      "id": "repair_sql_injection",
+      "type": "repair",
+      "category": "security",
+      "repo": "securestore",
+      "bug": "find_user_query builds SQL by interpolating the username directly (SQL injection). It should return a parameterized query with the username in params, not in the SQL string.",
+      "expected_files": [
+        "userdb.py"
+      ],
+      "test_path": "tests/test_userdb.py",
+      "expected_test": "tests/test_userdb.py::test_parameterized",
+      "expected_keywords": [
+        "sql",
+        "parameter",
+        "injection"
+      ]
+    },
+    {
+      "id": "repair_input_validation",
+      "type": "repair",
+      "category": "security",
+      "repo": "securestore",
+      "bug": "set_quantity accepts negative and invalid quantities without validation. Negative quantities must raise ValueError.",
+      "expected_files": [
+        "validation.py"
+      ],
+      "test_path": "tests/test_validation.py",
+      "expected_test": "tests/test_validation.py::test_negative_rejected",
+      "expected_keywords": [
+        "validation",
+        "negative",
+        "quantity"
+      ]
+    },
+    {
+      "id": "repair_n_plus_one",
+      "type": "repair",
+      "category": "performance",
+      "repo": "datapipe",
+      "bug": "fetch_prices issues one database call per id (an N+1 query). It should use the db's batch get_many to fetch all ids in a single call.",
+      "expected_files": [
+        "batch.py"
+      ],
+      "test_path": "tests/test_batch.py",
+      "expected_test": "tests/test_batch.py::test_batched",
+      "expected_keywords": [
+        "batch",
+        "query",
+        "get_many"
+      ]
+    },
+    {
+      "id": "repair_missing_cache",
+      "type": "repair",
+      "category": "performance",
+      "repo": "datapipe",
+      "bug": "get_setting calls the expensive loader on every request for the same key; repeated lookups of the same key should be cached so the loader runs once.",
+      "expected_files": [
+        "config_cache.py"
+      ],
+      "test_path": "tests/test_config_cache.py",
+      "expected_test": "tests/test_config_cache.py::test_loader_called_once",
+      "expected_keywords": [
+        "cache",
+        "loader",
+        "key"
+      ]
+    },
+    {
+      "id": "repair_redundant_reads",
+      "type": "repair",
+      "category": "performance",
+      "repo": "datapipe",
+      "bug": "total_size reads the same path from disk multiple times when a path repeats; it should read each unique path only once and reuse the result.",
+      "expected_files": [
+        "file_scan.py"
+      ],
+      "test_path": "tests/test_file_scan.py",
+      "expected_test": "tests/test_file_scan.py::test_reads_unique_only",
+      "expected_keywords": [
+        "read",
+        "unique",
+        "cache"
+      ]
+    },
+    {
+      "id": "repair_normalize_email",
+      "type": "repair",
+      "category": "single-file-logic",
+      "repo": "formsvc",
+      "bug": "normalize_email returns the email unchanged; it should strip surrounding whitespace and lowercase the address.",
+      "expected_files": [
+        "emails.py"
+      ],
+      "test_path": "tests/test_emails.py",
+      "expected_test": "tests/test_emails.py::test_normalize",
+      "expected_keywords": [
+        "email",
+        "lowercase",
+        "strip"
+      ]
+    },
+    {
+      "id": "repair_format_phone",
+      "type": "repair",
+      "category": "single-file-logic",
+      "repo": "formsvc",
+      "bug": "format_phone returns the raw digits; it should format a 10-digit string as (123) 456-7890.",
+      "expected_files": [
+        "phone.py"
+      ],
+      "test_path": "tests/test_phone.py",
+      "expected_test": "tests/test_phone.py::test_format",
+      "expected_keywords": [
+        "phone",
+        "format"
+      ]
+    },
+    {
+      "id": "repair_pagination",
+      "type": "repair",
+      "category": "regression",
+      "repo": "formsvc",
+      "bug": "Pagination is off by one page: page 1 returns the second page of items. Page numbers are 1-based.",
+      "expected_files": [
+        "pagination.py"
+      ],
+      "test_path": "tests/test_pagination.py",
+      "expected_test": "tests/test_pagination.py::test_first_page",
+      "expected_keywords": [
+        "page",
+        "offset"
+      ]
+    },
+    {
+      "id": "repair_slug",
+      "type": "repair",
+      "category": "regression",
+      "repo": "formsvc",
+      "bug": "slugify produces multiple consecutive dashes when the input has multiple spaces; it should collapse them into a single dash.",
+      "expected_files": [
+        "slug.py"
+      ],
+      "test_path": "tests/test_slug.py",
+      "expected_test": "tests/test_slug.py::test_slug",
+      "expected_keywords": [
+        "slug",
+        "dash"
+      ]
+    },
+    {
+      "id": "repair_password_rules",
+      "type": "repair",
+      "category": "multi-iteration",
+      "repo": "formsvc",
+      "bug": "Password validation only enforces minimum length. It must also reject passwords with no digit and passwords with no uppercase letter, while accepting a valid one.",
+      "expected_files": [
+        "password_rules.py"
+      ],
+      "test_path": "tests/test_password_rules.py",
+      "expected_test": "tests/test_password_rules.py::test_needs_upper",
+      "expected_keywords": [
+        "password",
+        "digit",
+        "uppercase"
+      ]
+    },
+    {
+      "id": "repair_date_parse",
+      "type": "repair",
+      "category": "multi-iteration",
+      "repo": "formsvc",
+      "bug": "parse only handles the YYYY-MM-DD format and crashes on DD/MM/YYYY. It must return (year, month, day) for both formats.",
+      "expected_files": [
+        "date_parse.py"
+      ],
+      "test_path": "tests/test_date_parse.py",
+      "expected_test": "tests/test_date_parse.py::test_slash",
+      "expected_keywords": [
+        "date",
+        "format",
+        "parse"
+      ]
+    },
+    {
+      "id": "repair_money_format",
+      "type": "repair",
+      "category": "multi-iteration",
+      "repo": "formsvc",
+      "bug": "format_amount formats positive cents correctly but renders negatives as '$-5.00'. Negatives must render as '-$5.00' and zero as '$0.00'.",
+      "expected_files": [
+        "money_format.py"
+      ],
+      "test_path": "tests/test_money_format.py",
+      "expected_test": "tests/test_money_format.py::test_negative",
+      "expected_keywords": [
+        "format",
+        "negative",
+        "sign"
+      ]
+    },
+    {
+      "id": "repair_missing_address",
+      "type": "repair",
+      "category": "single-file-logic",
+      "repo": "sample_app",
+      "bug": "Orders without an address crash with a KeyError; they should ship to 'unknown' instead.",
+      "expected_files": [
+        "orders.py"
+      ],
+      "test_path": "tests/test_orders.py",
+      "expected_test": "tests/test_orders.py::test_missing_address_defaults_to_unknown",
+      "expected_keywords": [
+        "address",
+        "unknown"
+      ]
+    },
+    {
+      "id": "repair_overdraft",
+      "type": "repair",
+      "category": "single-file-logic",
+      "repo": "bank_app",
+      "bug": "Withdrawing more than the balance succeeds and returns a negative balance; it should raise a ValueError.",
+      "expected_files": [
+        "account.py"
+      ],
+      "test_path": "tests/test_account.py",
+      "expected_test": "tests/test_account.py::test_overdraft_is_rejected",
+      "expected_keywords": [
+        "balance",
+        "raise"
+      ]
+    },
+    {
+      "id": "repair_exact_stock",
+      "type": "repair",
+      "category": "single-file-logic",
+      "repo": "inventory_app",
+      "bug": "An order that requests exactly the available stock is rejected; requesting the exact stock amount should be fulfillable.",
+      "expected_files": [
+        "inventory.py"
+      ],
+      "test_path": "tests/test_inventory.py",
+      "expected_test": "tests/test_inventory.py::test_exact_stock_can_be_fulfilled",
+      "expected_keywords": [
+        "stock",
+        "requested"
+      ]
+    },
+    {
+      "id": "repair_double_discount",
+      "type": "repair",
+      "category": "regression",
+      "repo": "cart_app",
+      "bug": "Cart totals with a discount are too low: a 10% discount on 100 returns 80 instead of 90; the discount is applied twice.",
+      "expected_files": [
+        "cart.py"
+      ],
+      "test_path": "tests/test_cart.py",
+      "expected_test": "tests/test_cart.py::test_single_discount_applied_once",
+      "expected_keywords": [
+        "discount",
+        "subtotal"
+      ]
+    },
+    {
+      "id": "repair_expired_token",
+      "type": "repair",
+      "category": "multi-file-dependency",
+      "repo": "auth_app",
+      "bug": "Expired tokens are still authorized (authorize returns 200 for an expired token); token validation should reject expired tokens.",
+      "expected_files": [
+        "token_util.py"
+      ],
+      "test_path": "tests/test_auth.py",
+      "expected_test": "tests/test_auth.py::test_expired_token_unauthorized",
+      "expected_keywords": [
+        "exp",
+        "expire",
+        "token"
+      ]
+    },
+    {
+      "id": "qa_order_city",
+      "type": "qa",
+      "category": "repository-qa",
+      "repo": "sample_app",
+      "question": "How is the shipping city for an order determined?",
+      "expected_files": [
+        "orders.py"
+      ],
+      "expected_keywords": [
+        "get_order_city",
+        "address",
+        "city"
+      ]
+    },
+    {
+      "id": "qa_token_validation",
+      "type": "qa",
+      "category": "repository-qa",
+      "repo": "auth_app",
+      "question": "How is a token checked for validity during authorization?",
+      "expected_files": [
+        "token_util.py",
+        "service.py"
+      ],
+      "expected_keywords": [
+        "is_valid",
+        "authorize",
+        "token"
+      ]
+    },
+    {
+      "id": "qa_shopcore_tax",
+      "type": "qa",
+      "category": "repository-qa",
+      "repo": "shopcore",
+      "question": "How is sales tax added to an amount in this codebase?",
+      "expected_files": [
+        "tax.py"
+      ],
+      "expected_keywords": [
+        "add_tax",
+        "amount",
+        "rate"
+      ]
+    },
+    {
+      "id": "qa_webapp_cart",
+      "type": "qa",
+      "category": "repository-qa",
+      "repo": "webapp",
+      "question": "How is the value of a shopping cart computed?",
+      "expected_files": [
+        "cart_service.py",
+        "catalog.py"
+      ],
+      "expected_keywords": [
+        "cart_value",
+        "price"
+      ]
+    }
+  ]
+}
