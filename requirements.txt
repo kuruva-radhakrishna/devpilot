@@ -1,0 +1,31 @@
+# --- Core API ---
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+pydantic==2.10.3
+pydantic-settings==2.6.1
+python-dotenv==1.0.1
+
+# --- LLM + embeddings (Google Gemini) ---
+google-generativeai==0.8.3
+
+# --- RAG / vector store ---
+numpy==2.1.3
+# pgvector backend (optional; only needed if VECTOR_BACKEND=pgvector)
+psycopg[binary]==3.2.3
+pgvector==0.3.6
+
+# --- Code parsing ---
+# tree-sitter is optional; the chunker falls back to a regex/line splitter
+# if these aren't installed. Uncomment to enable AST-aware chunking.
+# tree-sitter==0.23.2
+# tree-sitter-language-pack==0.4.0
+
+# --- Repo handling ---
+GitPython==3.1.43
+
+# --- MCP server (optional) ---
+mcp==1.1.2
+
+# --- Dev / eval ---
+httpx==0.28.1
+rich==13.9.4
