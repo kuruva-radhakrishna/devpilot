@@ -1,17 +1,19 @@
 """Agent (ask / debug) endpoint."""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
 from app import registry
 from app.agent.repair import run_repair
 from app.agent.runtime import run_agent
-from app.auth.deps import BoundKey, CurrentUser
+from app.auth.deps import CurrentUser
+from app.llm.keyctx import reset_request_key, set_request_key
 
-# BoundKey binds the request's BYOK Gemini key; CurrentUser requires a logged-in
-# caller (a no-op that passes through when auth isn't configured).
-router = APIRouter(prefix="/api/agent", tags=["agent"], dependencies=[BoundKey, CurrentUser])
+# CurrentUser requires a logged-in caller (a no-op that passes through when
+# auth isn't configured). BYOK's X-Gemini-Key is handled per-route below, not
+# as a router-level dependency — see app/auth/deps.py for why.
+router = APIRouter(prefix="/api/agent", tags=["agent"], dependencies=[CurrentUser])
 
 
 class AskRequest(BaseModel):
@@ -29,18 +31,22 @@ class DebugRequest(BaseModel):
 
 
 @router.post("/ask")
-def ask(req: AskRequest):
+def ask(req: AskRequest, x_gemini_key: str | None = Header(default=None)):
     meta = registry.get(req.repo_id)
     if not meta:
         raise HTTPException(404, f"Unknown repo_id '{req.repo_id}'. Ingest it first.")
 
-    result = run_agent(
-        repo_id=req.repo_id,
-        repo_dir=meta["repo_dir"],
-        question=req.question,
-        task=req.task,
-        prompt_version=req.prompt_version,
-    )
+    token = set_request_key((x_gemini_key or "").strip() or None)
+    try:
+        result = run_agent(
+            repo_id=req.repo_id,
+            repo_dir=meta["repo_dir"],
+            question=req.question,
+            task=req.task,
+            prompt_version=req.prompt_version,
+        )
+    finally:
+        reset_request_key(token)
     return {
         "answer": result.answer,
         "steps": result.steps,
@@ -53,19 +59,23 @@ def ask(req: AskRequest):
 
 
 @router.post("/debug")
-def debug(req: DebugRequest):
+def debug(req: DebugRequest, x_gemini_key: str | None = Header(default=None)):
     """Autonomous repair loop: search -> patch -> run tests in sandbox -> retry."""
     meta = registry.get(req.repo_id)
     if not meta:
         raise HTTPException(404, f"Unknown repo_id '{req.repo_id}'. Ingest it first.")
 
-    result = run_repair(
-        repo_id=req.repo_id,
-        repo_dir=meta["repo_dir"],
-        bug_report=req.bug_report,
-        test_path=req.test_path,
-        prompt_version=req.prompt_version,
-    )
+    token = set_request_key((x_gemini_key or "").strip() or None)
+    try:
+        result = run_repair(
+            repo_id=req.repo_id,
+            repo_dir=meta["repo_dir"],
+            bug_report=req.bug_report,
+            test_path=req.test_path,
+            prompt_version=req.prompt_version,
+        )
+    finally:
+        reset_request_key(token)
     return {
         "success": result.success,
         "root_cause": result.root_cause,
