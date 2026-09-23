@@ -312,7 +312,11 @@ export default function App() {
   const [repoId, setRepoId] = useState("");
   const [question, setQuestion] = useState("");
   const [result, setResult] = useState<AskResponse | null>(null);
-  const [busy, setBusy] = useState(false);
+  // Separate flags: ingest and ask are independent, unrelated requests — a
+  // shared flag made "Ask DevPilot" show "Thinking…" while only Ingest was
+  // running (and vice versa), which reads as a false/stuck request.
+  const [ingestBusy, setIngestBusy] = useState(false);
+  const [askBusy, setAskBusy] = useState(false);
   const [error, setError] = useState("");
   const [showHelp, setShowHelp] = useState(false);
 
@@ -336,10 +340,19 @@ export default function App() {
     } catch { /* ignore */ }
   }, [showApp]);
 
-  function handleAuthError(e: unknown) {
+  function handleRequestError(e: unknown) {
     if (e instanceof AuthError) {
       setAuthed(false);
       setError("Your session ended — please log in again.");
+    } else if (e instanceof TypeError) {
+      // fetch() throws a bare TypeError (not an HTTP error) when the
+      // connection itself failed — e.g. a host request-duration limit
+      // killing a long-running ingest. There's no server response to show.
+      setError(
+        "Network error — the request was interrupted before it finished. " +
+        "Large repos (or free-tier rate-limit backoffs) can take a while and may " +
+        "exceed the hosting timeout; try a smaller repo, or your own API key, or try again."
+      );
     } else {
       setError((e as Error).message);
     }
@@ -353,23 +366,23 @@ export default function App() {
   }
 
   async function onIngest() {
-    setError(""); setBusy(true);
+    setError(""); setIngestBusy(true);
     try {
       const meta = await ingestRepo(source.trim());
       await refresh();
       setRepoId(meta.repo_id);
       setSource("");
-    } catch (e) { handleAuthError(e); }
-    finally { setBusy(false); }
+    } catch (e) { handleRequestError(e); }
+    finally { setIngestBusy(false); }
   }
 
   async function onAsk() {
     if (!repoId || !question.trim()) return;
-    setError(""); setBusy(true); setResult(null);
+    setError(""); setAskBusy(true); setResult(null);
     try {
       setResult(await ask(repoId, question.trim()));
-    } catch (e) { handleAuthError(e); }
-    finally { setBusy(false); }
+    } catch (e) { handleRequestError(e); }
+    finally { setAskBusy(false); }
   }
 
   const examples = [
@@ -416,8 +429,8 @@ export default function App() {
             onChange={(e) => setSource(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && source.trim() && onIngest()}
           />
-          <button onClick={onIngest} disabled={busy || !source.trim()}>
-            {busy ? "Indexing…" : "Ingest"}
+          <button onClick={onIngest} disabled={ingestBusy || !source.trim()}>
+            {ingestBusy ? "Indexing…" : "Ingest"}
           </button>
         </div>
         <div className="muted" style={{ marginTop: 8 }}>
@@ -451,8 +464,8 @@ export default function App() {
             <span className="pill" key={ex} onClick={() => setQuestion(ex)}>{ex}</span>
           ))}
         </div>
-        <button onClick={onAsk} disabled={busy || !repoId || !question.trim()}>
-          {busy ? "Thinking…" : "Ask DevPilot"}
+        <button onClick={onAsk} disabled={askBusy || !repoId || !question.trim()}>
+          {askBusy ? "Thinking…" : "Ask DevPilot"}
         </button>
         {error && <div className="error">{error}</div>}
       </div>
