@@ -84,6 +84,14 @@ export const IconMoon = (p: IconProps) => (
   </svg>
 );
 
+export const IconHelp = (p: IconProps) => (
+  <Stroke {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M9.3 9.6a2.7 2.7 0 0 1 5.2 1c0 1.7-2.2 1.9-2.4 3.4" strokeWidth={1.9} />
+    <circle cx="12" cy="17" r="0.9" fill="currentColor" stroke="none" />
+  </Stroke>
+);
+
 export const IconLogOut = (p: IconProps) => (
   <Stroke {...p}>
     <path d="M9 4H5.5A1.5 1.5 0 0 0 4 5.5v13A1.5 1.5 0 0 0 5.5 20H9" />

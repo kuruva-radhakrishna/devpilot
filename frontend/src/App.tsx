@@ -22,6 +22,7 @@ import {
   IconBars,
   IconChat,
   IconCheck,
+  IconHelp,
   IconKey,
   IconLogOut,
   IconMoon,
@@ -48,7 +49,7 @@ function Wordmark() {
   );
 }
 
-function ThemeToggle({ fixed = true }: { fixed?: boolean }) {
+function ThemeToggle() {
   const [theme, setTheme] = useState(
     () => document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark"
   );
@@ -59,10 +60,64 @@ function ThemeToggle({ fixed = true }: { fixed?: boolean }) {
     try { localStorage.setItem("devpilot_theme", next); } catch { /* ignore */ }
   }
   return (
-    <div className={fixed ? "theme-toggle-fixed" : undefined}>
-      <button className="icon-btn" onClick={toggle} title="Toggle theme">
-        {theme === "dark" ? <IconSun /> : <IconMoon />}
-      </button>
+    <button className="icon-btn" onClick={toggle} title="Toggle theme">
+      {theme === "dark" ? <IconSun /> : <IconMoon />}
+    </button>
+  );
+}
+
+function HelpButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button className="icon-btn" onClick={onClick} title="How DevPilot works">
+      <IconHelp />
+    </button>
+  );
+}
+
+function HelpModal({ onClose }: { onClose: () => void }) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <h2>How DevPilot works</h2>
+          <button className="icon-btn" onClick={onClose} title="Close">✕</button>
+        </div>
+        <div className="muted">An AI agent that reads, debugs, and repairs a real codebase.</div>
+
+        <h4>Quick start</h4>
+        <ol className="modal-steps">
+          <li><span>Paste a GitHub URL (or a local path) and hit <b>Ingest</b> — it indexes the repo for retrieval.</span></li>
+          <li><span>Pick that repo, then either ask a question or describe a bug.</span></li>
+          <li><span>Get a grounded answer citing real files — or a patch, verified by running the actual tests.</span></li>
+        </ol>
+
+        <h4>What it can do</h4>
+        <ul className="modal-list good">
+          <li>Answer questions about a codebase, grounded in files it actually retrieved and read.</li>
+          <li>Propose a fix, apply it as a patch, and run the repo's tests to verify it.</li>
+          <li>Work with your own Gemini key so you're never limited by the shared demo quota.</li>
+        </ul>
+
+        <h4>What it can't do (yet)</h4>
+        <ul className="modal-list bad">
+          <li>Push, deploy, or open a PR — patches are proposed, not shipped anywhere.</li>
+          <li>Guarantee a fix on the first try — repair retries automatically, but isn't 100%.</li>
+          <li>Run tests in a fully isolated sandbox on this hosted demo — stick to trusted repos.</li>
+        </ul>
+
+        <div className="modal-foot">
+          Source, benchmark results, and the write-up:{" "}
+          <a href="https://github.com/kuruva-radhakrishna/devpilot" target="_blank" rel="noreferrer">
+            github.com/kuruva-radhakrishna/devpilot
+          </a>
+        </div>
+      </div>
     </div>
   );
 }
@@ -105,9 +160,17 @@ function AuthScreen({ onAuthed }: { onAuthed: (email: string) => void }) {
     }
   }
 
+  const [showHelp, setShowHelp] = useState(false);
+
   return (
     <div className="app wide">
-      <ThemeToggle />
+      <div className="topbar" style={{ marginBottom: 0, justifyContent: "flex-end" }}>
+        <div className="corner-controls">
+          <HelpButton onClick={() => setShowHelp(true)} />
+          <ThemeToggle />
+        </div>
+      </div>
+      {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
       <div className="auth-wrap">
         <div className="brand" style={{ marginBottom: 10 }}>
           <BrandMark />
@@ -251,6 +314,7 @@ export default function App() {
   const [result, setResult] = useState<AskResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [showHelp, setShowHelp] = useState(false);
 
   useEffect(() => {
     getHealth().then(setHealth).catch(() => setHealth(null));
@@ -261,7 +325,15 @@ export default function App() {
 
   const refresh = () => listRepos().then(setRepos).catch(() => {});
   useEffect(() => {
-    if (showApp) refresh();
+    if (!showApp) return;
+    refresh();
+    // First-ever visit to the working app: open Help once, unprompted.
+    try {
+      if (!localStorage.getItem("devpilot_seen_help")) {
+        setShowHelp(true);
+        localStorage.setItem("devpilot_seen_help", "1");
+      }
+    } catch { /* ignore */ }
   }, [showApp]);
 
   function handleAuthError(e: unknown) {
@@ -312,17 +384,19 @@ export default function App() {
 
   return (
     <div className="app">
-      <ThemeToggle />
+      {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
       <div className="topbar">
         <div className="brand">
           <BrandMark size={32} />
           <Wordmark />
         </div>
         <div className="account">
+          <HelpButton onClick={() => setShowHelp(true)} />
+          <ThemeToggle />
           <SettingsMenu />
           {authRequired && authed && (
             <>
-              <span className="account-email">{email || "signed in"}</span>
+              <span className="account-email" title={email}>{email || "signed in"}</span>
               <button className="ghost" onClick={logout} title="Log out">
                 <IconLogOut width={16} height={16} />
               </button>
