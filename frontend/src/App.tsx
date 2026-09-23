@@ -17,60 +17,69 @@ import {
   type Health,
   type RepoMeta,
 } from "./api";
+import {
+  BrandMark,
+  IconBars,
+  IconChat,
+  IconCheck,
+  IconKey,
+  IconLogOut,
+  IconMoon,
+  IconNetwork,
+  IconSearch,
+  IconSettings,
+  IconSun,
+} from "./icons";
 
 const FEATURES = [
-  {
-    icon: "🔎",
-    title: "Code-aware RAG",
-    body: "Ingests a GitHub repo, chunks it by structure, and indexes it with hybrid semantic + keyword retrieval — so answers are grounded in the code, not guessed.",
-  },
-  {
-    icon: "🧭",
-    title: "Grounded Q&A",
-    body: "A tool-calling agent reads files, searches code, and finds references before answering — and shows you exactly which tools it used.",
-  },
-  {
-    icon: "🛠️",
-    title: "Autonomous repair",
-    body: "Describe a bug and DevPilot proposes a fix, applies it as a structured patch, runs the tests in a sandbox, and retries until they pass.",
-  },
-  {
-    icon: "🧪",
-    title: "Evaluated, not vibes",
-    body: "Measured on a 40-case benchmark: retrieval Recall@5 and repair success are tracked across prompt versions (baseline 33% → 97%).",
-  },
-  {
-    icon: "🔌",
-    title: "Provider-agnostic",
-    body: "Runs on Google Gemini or a local Ollama model behind one interface — swap the backend without touching the agent, RAG, or eval.",
-  },
-  {
-    icon: "🔑",
-    title: "Bring your own key",
-    body: "Paste your own free Gemini key — it stays in your browser and is used only for your requests, so the shared demo quota never runs out.",
-  },
+  { Icon: IconSearch, title: "Code-aware RAG", body: "Indexes your repo with hybrid semantic + keyword search." },
+  { Icon: IconChat, title: "Grounded Q&A", body: "Reads real files and shows exactly which tools it used." },
+  { Icon: IconCheck, title: "Autonomous repair", body: "Patches bugs and verifies the fix with real test runs." },
+  { Icon: IconBars, title: "Evaluated, not vibes", body: "97% repair success, measured on a 40-case benchmark." },
+  { Icon: IconNetwork, title: "Provider-agnostic", body: "Runs on Gemini or a local Ollama model." },
+  { Icon: IconKey, title: "Bring your own key", body: "Use your own free key — the demo quota never runs out." },
 ];
 
-function Brand({ compact = false }: { compact?: boolean }) {
+function Wordmark() {
   return (
-    <div className="brand">
-      <div className="brand-mark">🧭</div>
-      <div className="title" style={compact ? { fontSize: 18 } : undefined}>DevPilot</div>
+    <span className="wordmark">
+      <span className="dim">Dev</span><span className="pop">Pilot</span>
+    </span>
+  );
+}
+
+function ThemeToggle({ fixed = true }: { fixed?: boolean }) {
+  const [theme, setTheme] = useState(
+    () => document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark"
+  );
+  function toggle() {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    document.documentElement.setAttribute("data-theme", next);
+    try { localStorage.setItem("devpilot_theme", next); } catch { /* ignore */ }
+  }
+  return (
+    <div className={fixed ? "theme-toggle-fixed" : undefined}>
+      <button className="icon-btn" onClick={toggle} title="Toggle theme">
+        {theme === "dark" ? <IconSun /> : <IconMoon />}
+      </button>
     </div>
   );
 }
 
-function Features() {
+function FeatureList() {
   return (
-    <div className="features">
+    <>
       {FEATURES.map((f) => (
-        <div className="feature" key={f.title}>
-          <div className="feature-icon">{f.icon}</div>
-          <div className="feature-title">{f.title}</div>
-          <div className="feature-body">{f.body}</div>
+        <div className="feature-row" key={f.title}>
+          <div className="feature-icon"><f.Icon width={17} height={17} /></div>
+          <div>
+            <div className="feature-title">{f.title}</div>
+            <div className="feature-body">{f.body}</div>
+          </div>
         </div>
       ))}
-    </div>
+    </>
   );
 }
 
@@ -97,58 +106,65 @@ function AuthScreen({ onAuthed }: { onAuthed: (email: string) => void }) {
   }
 
   return (
-    <div className="app">
-      <div className="auth-shell">
-        <Brand />
-        <div className="subtitle" style={{ textAlign: "center" }}>
-          An AI software-engineering agent — ingest a repo, then ask it anything or have it
-          fix bugs. Grounded in the code it actually read.
+    <div className="app wide">
+      <ThemeToggle />
+      <div className="auth-wrap">
+        <div className="brand" style={{ marginBottom: 10 }}>
+          <BrandMark />
+          <Wordmark />
+        </div>
+        <div className="tagline" style={{ marginBottom: 28 }}>
+          Reads your repo, debugs it, and ships the fix.
         </div>
 
-        <div className="panel auth-panel">
-          <div className="tabs">
-            <button
-              className={mode === "login" ? "tab active" : "tab"}
-              onClick={() => { setMode("login"); setError(""); }}
-            >
-              Log in
+        <div className="auth-card">
+          <div className="auth-form-side">
+            <div className="tabs">
+              <button
+                className={mode === "login" ? "tab active" : "tab"}
+                onClick={() => { setMode("login"); setError(""); }}
+              >
+                Log in
+              </button>
+              <button
+                className={mode === "register" ? "tab active" : "tab"}
+                onClick={() => { setMode("register"); setError(""); }}
+              >
+                Create account
+              </button>
+            </div>
+
+            <label>Email</label>
+            <input
+              type="email"
+              autoComplete="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+            <div style={{ height: 14 }} />
+            <label>Password {mode === "register" && <span className="muted">· min 8 characters</span>}</label>
+            <input
+              type="password"
+              autoComplete={mode === "login" ? "current-password" : "new-password"}
+              placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && email && password && submit()}
+            />
+            <div style={{ height: 18 }} />
+            <button style={{ width: "100%" }} onClick={submit} disabled={busy || !email.trim() || password.length < 8}>
+              {busy ? "Please wait…" : mode === "login" ? "Log in" : "Create account"}
             </button>
-            <button
-              className={mode === "register" ? "tab active" : "tab"}
-              onClick={() => { setMode("register"); setError(""); }}
-            >
-              Create account
-            </button>
+            {error && <div className="error">{error}</div>}
           </div>
 
-          <label>Email</label>
-          <input
-            type="email"
-            autoComplete="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-          <div style={{ height: 14 }} />
-          <label>Password {mode === "register" && <span className="muted">(min 8 characters)</span>}</label>
-          <input
-            type="password"
-            autoComplete={mode === "login" ? "current-password" : "new-password"}
-            placeholder="••••••••"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && email && password && submit()}
-          />
-          <div style={{ height: 16 }} />
-          <button style={{ width: "100%" }} onClick={submit} disabled={busy || !email.trim() || password.length < 8}>
-            {busy ? "Please wait…" : mode === "login" ? "Log in" : "Create account"}
-          </button>
-          {error && <div className="error">{error}</div>}
+          <div className="auth-feature-side">
+            <h3>Why DevPilot</h3>
+            <FeatureList />
+          </div>
         </div>
       </div>
-
-      <div className="section-label">What DevPilot does</div>
-      <Features />
     </div>
   );
 }
@@ -184,14 +200,15 @@ function SettingsMenu() {
         onClick={() => setOpen((v) => !v)}
         title="Gemini API key settings"
       >
-        ⚙️
+        <IconSettings />
       </button>
       {open && (
         <div className="settings-drop">
-          <label>
-            Your Gemini API key <span className="muted">— optional</span>
-          </label>
-          <div className="row">
+          <div className="settings-drop-head">
+            <IconKey width={15} height={15} />
+            <label style={{ margin: 0 }}>Your Gemini API key <span className="muted">— optional</span></label>
+          </div>
+          <div className="row" style={{ marginTop: 10 }}>
             <input
               type="password"
               placeholder={keySaved ? "•••••••• (saved)" : "AIza… paste your own key"}
@@ -210,7 +227,7 @@ function SettingsMenu() {
               {keySaved
                 ? "Using your key — spends your own free quota, not the shared demo's."
                 : "Using the server's shared key (limited free quota)."}{" "}
-              Stored only in this browser, sent only with your requests. Get one free at{" "}
+              Stored only in this browser. Get one free at{" "}
               <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer">
                 aistudio.google.com/app/apikey
               </a>.
@@ -295,20 +312,20 @@ export default function App() {
 
   return (
     <div className="app">
+      <ThemeToggle />
       <div className="topbar">
-        <div>
-          <Brand />
-          <div className="subtitle">
-            Ingest a repo, then ask it anything. Answers are grounded in code the agent
-            actually read.
-          </div>
+        <div className="brand">
+          <BrandMark size={32} />
+          <Wordmark />
         </div>
         <div className="account">
           <SettingsMenu />
           {authRequired && authed && (
             <>
               <span className="account-email">{email || "signed in"}</span>
-              <button className="ghost" onClick={logout}>Log out</button>
+              <button className="ghost" onClick={logout} title="Log out">
+                <IconLogOut width={16} height={16} />
+              </button>
             </>
           )}
         </div>
@@ -382,9 +399,6 @@ export default function App() {
           </div>
         </div>
       )}
-
-      <div className="section-label">What DevPilot does</div>
-      <Features />
     </div>
   );
 }
