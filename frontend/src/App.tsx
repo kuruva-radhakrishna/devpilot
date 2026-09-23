@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ask,
   AuthError,
@@ -51,6 +51,15 @@ const FEATURES = [
   },
 ];
 
+function Brand({ compact = false }: { compact?: boolean }) {
+  return (
+    <div className="brand">
+      <div className="brand-mark">🧭</div>
+      <div className="title" style={compact ? { fontSize: 18 } : undefined}>DevPilot</div>
+    </div>
+  );
+}
+
 function Features() {
   return (
     <div className="features">
@@ -89,55 +98,126 @@ function AuthScreen({ onAuthed }: { onAuthed: (email: string) => void }) {
 
   return (
     <div className="app">
-      <div className="title">🧭 DevPilot</div>
-      <div className="subtitle">
-        An AI software-engineering agent — ingest a repo, then ask it anything or have it
-        fix bugs. Grounded in the code it actually read.
-      </div>
-
-      <div className="panel auth-panel">
-        <div className="tabs">
-          <button
-            className={mode === "login" ? "tab active" : "tab"}
-            onClick={() => { setMode("login"); setError(""); }}
-          >
-            Log in
-          </button>
-          <button
-            className={mode === "register" ? "tab active" : "tab"}
-            onClick={() => { setMode("register"); setError(""); }}
-          >
-            Create account
-          </button>
+      <div className="auth-shell">
+        <Brand />
+        <div className="subtitle" style={{ textAlign: "center" }}>
+          An AI software-engineering agent — ingest a repo, then ask it anything or have it
+          fix bugs. Grounded in the code it actually read.
         </div>
 
-        <label>Email</label>
-        <input
-          type="email"
-          autoComplete="email"
-          placeholder="you@example.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
-        <div style={{ height: 12 }} />
-        <label>Password {mode === "register" && <span className="muted">(min 8 characters)</span>}</label>
-        <input
-          type="password"
-          autoComplete={mode === "login" ? "current-password" : "new-password"}
-          placeholder="••••••••"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && email && password && submit()}
-        />
-        <div style={{ height: 14 }} />
-        <button onClick={submit} disabled={busy || !email.trim() || password.length < 8}>
-          {busy ? "Please wait…" : mode === "login" ? "Log in" : "Create account"}
-        </button>
-        {error && <div className="error">{error}</div>}
+        <div className="panel auth-panel">
+          <div className="tabs">
+            <button
+              className={mode === "login" ? "tab active" : "tab"}
+              onClick={() => { setMode("login"); setError(""); }}
+            >
+              Log in
+            </button>
+            <button
+              className={mode === "register" ? "tab active" : "tab"}
+              onClick={() => { setMode("register"); setError(""); }}
+            >
+              Create account
+            </button>
+          </div>
+
+          <label>Email</label>
+          <input
+            type="email"
+            autoComplete="email"
+            placeholder="you@example.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          <div style={{ height: 14 }} />
+          <label>Password {mode === "register" && <span className="muted">(min 8 characters)</span>}</label>
+          <input
+            type="password"
+            autoComplete={mode === "login" ? "current-password" : "new-password"}
+            placeholder="••••••••"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && email && password && submit()}
+          />
+          <div style={{ height: 16 }} />
+          <button style={{ width: "100%" }} onClick={submit} disabled={busy || !email.trim() || password.length < 8}>
+            {busy ? "Please wait…" : mode === "login" ? "Log in" : "Create account"}
+          </button>
+          {error && <div className="error">{error}</div>}
+        </div>
       </div>
 
       <div className="section-label">What DevPilot does</div>
       <Features />
+    </div>
+  );
+}
+
+function SettingsMenu() {
+  const [open, setOpen] = useState(false);
+  const [keyInput, setKeyInput] = useState("");
+  const [keySaved, setKeySaved] = useState(!!getApiKey());
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
+  function saveKey() {
+    setApiKey(keyInput);
+    setKeySaved(!!keyInput.trim());
+    setKeyInput("");
+  }
+  function removeKey() {
+    clearApiKey();
+    setKeySaved(false);
+  }
+
+  return (
+    <div className="settings-wrap" ref={ref}>
+      <button
+        className={open || keySaved ? "icon-btn on" : "icon-btn"}
+        onClick={() => setOpen((v) => !v)}
+        title="Gemini API key settings"
+      >
+        ⚙️
+      </button>
+      {open && (
+        <div className="settings-drop">
+          <label>
+            Your Gemini API key <span className="muted">— optional</span>
+          </label>
+          <div className="row">
+            <input
+              type="password"
+              placeholder={keySaved ? "•••••••• (saved)" : "AIza… paste your own key"}
+              value={keyInput}
+              onChange={(e) => setKeyInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && keyInput.trim() && saveKey()}
+            />
+          </div>
+          <div className="row" style={{ marginTop: 8 }}>
+            <button onClick={saveKey} disabled={!keyInput.trim()} style={{ flex: 1 }}>Save</button>
+            {keySaved && <button className="ghost" onClick={removeKey}>Clear</button>}
+          </div>
+          <div className="key-status">
+            <span className={keySaved ? "dot on" : "dot off"} />
+            <span>
+              {keySaved
+                ? "Using your key — spends your own free quota, not the shared demo's."
+                : "Using the server's shared key (limited free quota)."}{" "}
+              Stored only in this browser, sent only with your requests. Get one free at{" "}
+              <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer">
+                aistudio.google.com/app/apikey
+              </a>.
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -154,10 +234,6 @@ export default function App() {
   const [result, setResult] = useState<AskResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-
-  // API-key panel state
-  const [keyInput, setKeyInput] = useState("");
-  const [keySaved, setKeySaved] = useState(!!getApiKey());
 
   useEffect(() => {
     getHealth().then(setHealth).catch(() => setHealth(null));
@@ -185,16 +261,6 @@ export default function App() {
     setAuthed(false);
     setResult(null);
     setRepos({});
-  }
-
-  function saveKey() {
-    setApiKey(keyInput);
-    setKeySaved(!!keyInput.trim());
-    setKeyInput("");
-  }
-  function removeKey() {
-    clearApiKey();
-    setKeySaved(false);
   }
 
   async function onIngest() {
@@ -231,50 +297,26 @@ export default function App() {
     <div className="app">
       <div className="topbar">
         <div>
-          <div className="title">🧭 DevPilot</div>
+          <Brand />
           <div className="subtitle">
-            AI software-engineering agent — ingest a repo, then ask it anything. Answers are
-            grounded in code the agent actually read.
+            Ingest a repo, then ask it anything. Answers are grounded in code the agent
+            actually read.
           </div>
         </div>
-        {authRequired && authed && (
-          <div className="account">
-            <span className="muted">{email || "signed in"}</span>
-            <button className="ghost" onClick={logout}>Log out</button>
-          </div>
-        )}
-      </div>
-
-      {/* API key (BYOK) */}
-      <div className="panel">
-        <label>
-          Your Gemini API key{" "}
-          <span className="muted">— optional, stays in your browser</span>
-        </label>
-        <div className="row">
-          <input
-            type="password"
-            placeholder={keySaved ? "•••••••• (saved in this browser)" : "AIza…  paste your own key"}
-            value={keyInput}
-            onChange={(e) => setKeyInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && keyInput.trim() && saveKey()}
-          />
-          <button onClick={saveKey} disabled={!keyInput.trim()}>Save</button>
-          {keySaved && <button className="ghost" onClick={removeKey}>Clear</button>}
-        </div>
-        <div className="muted" style={{ marginTop: 8 }}>
-          {keySaved
-            ? "Using your key — requests spend your own free quota, not the shared demo's."
-            : "No key set — using the server's shared key (limited free quota). "}
-          Get a free key at{" "}
-          <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer">
-            aistudio.google.com/app/apikey
-          </a>. It's sent only with your requests and never stored on our server.
+        <div className="account">
+          <SettingsMenu />
+          {authRequired && authed && (
+            <>
+              <span className="account-email">{email || "signed in"}</span>
+              <button className="ghost" onClick={logout}>Log out</button>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Ingest */}
-      <div className="panel">
+      {/* Step 1: Ingest */}
+      <div className="panel step">
+        <div className="step-badge">1</div>
         <label>Ingest a repository (GitHub URL or local path)</label>
         <div className="row">
           <input
@@ -292,8 +334,9 @@ export default function App() {
         </div>
       </div>
 
-      {/* Ask */}
-      <div className="panel">
+      {/* Step 2: Ask */}
+      <div className="panel step">
+        <div className="step-badge">2</div>
         <label>Repository</label>
         <select value={repoId} onChange={(e) => setRepoId(e.target.value)}>
           <option value="">Select an ingested repo…</option>
@@ -304,7 +347,7 @@ export default function App() {
           ))}
         </select>
 
-        <div style={{ height: 12 }} />
+        <div style={{ height: 14 }} />
         <label>Question</label>
         <textarea
           rows={3}
@@ -312,7 +355,7 @@ export default function App() {
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
         />
-        <div style={{ margin: "8px 0" }}>
+        <div style={{ margin: "10px 0" }}>
           {examples.map((ex) => (
             <span className="pill" key={ex} onClick={() => setQuestion(ex)}>{ex}</span>
           ))}
