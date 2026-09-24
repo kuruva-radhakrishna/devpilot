@@ -38,13 +38,16 @@ def ask(req: AskRequest, x_gemini_key: str | None = Header(default=None)):
 
     token = set_request_key((x_gemini_key or "").strip() or None)
     try:
-        result = run_agent(
-            repo_id=req.repo_id,
-            repo_dir=meta["repo_dir"],
-            question=req.question,
-            task=req.task,
-            prompt_version=req.prompt_version,
-        )
+        try:
+            result = run_agent(
+                repo_id=req.repo_id,
+                repo_dir=meta["repo_dir"],
+                question=req.question,
+                task=req.task,
+                prompt_version=req.prompt_version,
+            )
+        except Exception as exc:  # noqa: BLE001 — surface a clean error to the client
+            raise HTTPException(status_code=400, detail=str(exc))
     finally:
         reset_request_key(token)
     return {
@@ -67,13 +70,16 @@ def debug(req: DebugRequest, x_gemini_key: str | None = Header(default=None)):
 
     token = set_request_key((x_gemini_key or "").strip() or None)
     try:
-        result = run_repair(
-            repo_id=req.repo_id,
-            repo_dir=meta["repo_dir"],
-            bug_report=req.bug_report,
-            test_path=req.test_path,
-            prompt_version=req.prompt_version,
-        )
+        try:
+            result = run_repair(
+                repo_id=req.repo_id,
+                repo_dir=meta["repo_dir"],
+                bug_report=req.bug_report,
+                test_path=req.test_path,
+                prompt_version=req.prompt_version,
+            )
+        except Exception as exc:  # noqa: BLE001 — surface a clean error to the client
+            raise HTTPException(status_code=400, detail=str(exc))
     finally:
         reset_request_key(token)
     return {
