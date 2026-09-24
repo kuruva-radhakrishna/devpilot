@@ -350,7 +350,7 @@ html, body, #root { height: 100%; }
   flex: none; height: 60px; display: flex; align-items: center; justify-content: space-between;
   padding: 0 18px; border-bottom: 1px solid var(--border); background: var(--panel);
 }
-.topbar-left, .topbar-right { display: flex; align-items: center; gap: 12px; }
+.topbar-left, .topbar-right { display: flex; align-items: center; gap: 12px; flex: none; }
 /* button.icon-btn (element+class) outranks a plain .mobile-menu-btn (class
    alone) — match its specificity so this hide rule actually wins by default. */
 button.mobile-menu-btn { display: none; }
@@ -424,7 +424,10 @@ button.mobile-menu-btn { display: none; }
 /* --- Popover (API key panel, anchored above its trigger) --- */
 .popover { position: relative; }
 .popover.popover-up {
-  position: absolute; left: 0; bottom: calc(100% + 8px); width: 300px; z-index: 30;
+  /* Sidebar is 292px with 12px side padding -> ~268px of usable width; this
+     must stay under that or it overflows past the sidebar's right edge into
+     the main content area (a real bug this was previously — was 300px). */
+  position: absolute; left: 0; bottom: calc(100% + 8px); width: 260px; z-index: 30;
   background: var(--bg-elevated); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow-md);
 }
