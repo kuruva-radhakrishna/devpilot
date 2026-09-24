@@ -5,7 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DevPilot</title>
     <meta name="description" content="An AI software-engineering agent — ingest a repo, ask it anything, or have it fix bugs." />
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧭</text></svg>" />
+    <!-- Matches BrandMark in src/icons.tsx exactly (same gradient + glyph) so
+         the browser tab icon isn't a leftover from before the rebrand. # must
+         stay percent-encoded (%23) — an unencoded # inside a data: URI is read
+         as the start of the OUTER URL's fragment, truncating the SVG. -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 40 40%22><rect width=%2240%22 height=%2240%22 rx=%2211%22 fill=%22url(%23g)%22/><path d=%22M13.5 14 L20 20 L13.5 26%22 stroke=%22white%22 stroke-width=%222.6%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22 fill=%22none%22/><line x1=%2222.5%22 y1=%2226%22 x2=%2227.5%22 y2=%2226%22 stroke=%22white%22 stroke-width=%222.6%22 stroke-linecap=%22round%22/><defs><linearGradient id=%22g%22 x1=%220%22 y1=%220%22 x2=%2240%22 y2=%2240%22 gradientUnits=%22userSpaceOnUse%22><stop stop-color=%22%237C6CFF%22/><stop offset=%221%22 stop-color=%22%2322D3EE%22/></linearGradient></defs></svg>" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
