@@ -21,7 +21,7 @@ services:
       - key: LLM_PROVIDER
         value: gemini
       - key: GEMINI_MODEL
-        value: gemini-2.5-flash-lite
+        value: gemini-3.5-flash-lite
       - key: SANDBOX_BACKEND
         value: local
       - key: VECTOR_BACKEND

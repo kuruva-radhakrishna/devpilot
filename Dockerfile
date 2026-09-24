@@ -17,7 +17,7 @@ COPY examples ./examples
 WORKDIR /app/backend
 ENV PYTHONUNBUFFERED=1 \
     LLM_PROVIDER=gemini \
-    GEMINI_MODEL=gemini-2.5-flash-lite \
+    GEMINI_MODEL=gemini-3.5-flash-lite \
     VECTOR_BACKEND=memory \
     SANDBOX_BACKEND=local
 EXPOSE 8000

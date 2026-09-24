@@ -25,7 +25,9 @@ class Settings(BaseSettings):
     # flash-lite has a higher free-tier daily limit than flash — better for a
     # public demo. Callers may also supply their own key per request (BYOK),
     # which is used in place of gemini_api_key for that call.
-    gemini_model: str = "gemini-2.5-flash-lite"
+    # gemini-2.5-flash-lite was deprecated for new users; Google's own error
+    # message points to gemini-3.5-flash-lite as the replacement.
+    gemini_model: str = "gemini-3.5-flash-lite"
     gemini_embed_model: str = "gemini-embedding-001"
     # gemini-embedding-001 defaults to 3072 dims but supports output_dimensionality;
     # we pin 768 to keep vectors compact and match the pgvector schema.

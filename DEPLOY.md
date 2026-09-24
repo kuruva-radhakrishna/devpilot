@@ -42,7 +42,7 @@ and leave `DATABASE_URL` empty, the app still runs — just with **no login gate
    - `DATABASE_URL` = the Postgres URI from step 0 (enables login)
    - `JWT_SECRET` = the blueprint generates one automatically; or set your own
      long random string. Signs login sessions — keep it secret.
-   - `LLM_PROVIDER=gemini`, `GEMINI_MODEL=gemini-2.5-flash-lite`,
+   - `LLM_PROVIDER=gemini`, `GEMINI_MODEL=gemini-3.5-flash-lite`,
      `SANDBOX_BACKEND=local`, `VECTOR_BACKEND=memory` (already set by the blueprint)
 4. Deploy. When it's live, note the URL, e.g. `https://devpilot-backend.onrender.com`.
    Health check: open `<url>/api/health` → `{"status":"ok","auth_enabled":true,...}`.
