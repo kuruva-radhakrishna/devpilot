@@ -11,11 +11,14 @@ frontend.
 > arbitrary public input. Repairs take minutes, and the free Gemini tier allows
 > ~20 generate calls/day, so treat this as a demo, not a public service.
 
-## 0. A Postgres database (for login)
+## 0. A Postgres database (for login, repos, and chat history)
 
-Email/password login stores accounts in Postgres. Render's free web service has
-**no persistent disk**, so accounts must live in an external DB or they vanish on
-every redeploy. Use a free hosted Postgres — **Supabase** is the quickest:
+Email/password login, ingested-repo metadata, chat history, and (with
+`VECTOR_BACKEND=pgvector`) the embedded code chunks themselves all live in
+Postgres. Render's free web service has **no persistent disk**, so without a
+database, all of that lives on ephemeral disk / in the browser tab and
+vanishes on every redeploy, restart, or reload. Use a free hosted Postgres —
+**Supabase** is the quickest:
 
 1. https://supabase.com → **New project** (free tier). Pick a region + DB password.
 2. Project → **Connect** (or Settings → Database) → copy the **connection string

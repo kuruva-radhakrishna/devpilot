@@ -45,6 +45,21 @@ def _init_auth() -> None:
         print(f"[auth] init_db failed (auth routes will report errors): {exc}")
 
 
+@app.on_event("startup")
+def _init_store() -> None:
+    """Create the repos/messages/code_chunks tables (+ pgvector extension) when
+    a database is configured, so ingested repos and chat history survive a
+    restart instead of living only on ephemeral disk / in browser memory."""
+    s = get_settings()
+    if not s.auth_available:
+        return
+    try:
+        from app.db import store
+        store.init_store()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[store] init_store failed (persistence routes will report errors): {exc}")
+
+
 app.include_router(routes_auth.router)
 app.include_router(routes_repo.router)
 app.include_router(routes_agent.router)

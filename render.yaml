@@ -14,8 +14,8 @@ services:
         sync: false
       - key: ALLOWED_ORIGINS       # set to your Vercel URL, e.g. https://devpilot.vercel.app
         sync: false
-      - key: DATABASE_URL          # Postgres for the login user store (Supabase/Render PG)
-        sync: false
+      - key: DATABASE_URL          # Postgres: user accounts, repo/chat persistence, and
+        sync: false                # (with VECTOR_BACKEND=pgvector) the embedded chunks themselves
       - key: JWT_SECRET            # signs login sessions — generated, kept secret
         generateValue: true
       - key: LLM_PROVIDER
@@ -25,6 +25,6 @@ services:
       - key: SANDBOX_BACKEND
         value: local
       - key: VECTOR_BACKEND
-        value: memory
+        value: pgvector
       - key: TRACE_ENABLED
         value: "true"

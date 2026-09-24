@@ -45,7 +45,11 @@ def make_repo_id(source: str) -> str:
     return f"{base}-{digest}"
 
 
-def _prepare_repo_dir(source: str, repo_id: str) -> str:
+def prepare_repo_dir(source: str, repo_id: str) -> str:
+    """Materialize a repo's working directory on disk (clone or resolve a
+    local path). Public because callers may need to re-run just this step —
+    e.g. recovering a git clone that a container restart wiped, without
+    re-chunking/re-embedding anything."""
     cache_root = get_settings().repo_cache_dir
     os.makedirs(cache_root, exist_ok=True)
     dest = os.path.join(cache_root, repo_id)
@@ -69,7 +73,7 @@ def _prepare_repo_dir(source: str, repo_id: str) -> str:
 def ingest_repo(source: str) -> dict:
     """Ingest a repo from a GitHub URL or a local path. Returns a summary dict."""
     repo_id = make_repo_id(source)
-    repo_dir = _prepare_repo_dir(source, repo_id)
+    repo_dir = prepare_repo_dir(source, repo_id)
 
     store = get_store()
     store.delete_repo(repo_id)  # idempotent: clear old chunks first

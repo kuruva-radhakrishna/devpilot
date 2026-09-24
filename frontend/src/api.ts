@@ -128,3 +128,19 @@ export const listRepos = async (): Promise<Record<string, RepoMeta>> => {
 
 export const ask = (repo_id: string, question: string) =>
   post<AskResponse>("/api/agent/ask", { repo_id, question });
+
+export interface StoredMessage {
+  role: "user" | "assistant" | "error";
+  content: string;
+  tool_names: string[];
+}
+
+/** Prior conversation for this repo, if the server has persistence enabled
+ * (a database configured) — otherwise always an empty list. */
+export const getMessages = async (repo_id: string): Promise<StoredMessage[]> => {
+  const res = await fetch(BASE + `/api/agent/messages/${encodeURIComponent(repo_id)}`, {
+    headers: headers(false),
+  });
+  const data = await handle<{ messages?: StoredMessage[] }>(res);
+  return data.messages ?? [];
+};

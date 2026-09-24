@@ -127,7 +127,12 @@ class PgVectorStore(VectorStore):
 
         self._psycopg = psycopg
         self._register_vector = register_vector
-        self._dsn = get_settings().pg_dsn
+        # auth_dsn resolves to DATABASE_URL when set (e.g. the Supabase instance
+        # backing auth + repo/chat persistence) — NOT pg_dsn, which only builds
+        # from the discrete postgres_* fields and defaults to localhost. Using
+        # pg_dsn here would silently try to connect to a local Postgres that
+        # doesn't exist on a host like Render.
+        self._dsn = get_settings().auth_dsn
 
     def _conn(self):
         conn = self._psycopg.connect(self._dsn, autocommit=True)

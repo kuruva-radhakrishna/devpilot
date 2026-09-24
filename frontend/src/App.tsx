@@ -7,6 +7,7 @@ import {
   clearToken,
   getApiKey,
   getHealth,
+  getMessages,
   getToken,
   ingestRepo,
   listRepos,
@@ -379,6 +380,29 @@ export default function App() {
   function appendMessage(id: string, msg: ChatMessage) {
     setChats((c) => ({ ...c, [id]: [...(c[id] ?? []), msg] }));
   }
+
+  // Load a repo's prior conversation the first time it's selected in this
+  // session. Tracked in a ref (not the chats object) so this effect only
+  // depends on repoId — otherwise it'd re-run on every new message, since
+  // chats gets a new reference each time appendMessage fires.
+  const fetchedHistoryFor = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!repoId || fetchedHistoryFor.current.has(repoId)) return;
+    fetchedHistoryFor.current.add(repoId);
+    getMessages(repoId)
+      .then((stored) => {
+        if (!stored.length) return;
+        setChats((c) => ({
+          ...c,
+          [repoId]: stored.map((m) => ({
+            role: m.role,
+            content: m.content,
+            toolNames: m.tool_names,
+          })),
+        }));
+      })
+      .catch(() => { /* best-effort — an empty chat is a fine fallback */ });
+  }, [repoId]);
 
   useEffect(() => {
     const el = chatWindowRef.current;
