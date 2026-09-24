@@ -132,6 +132,13 @@ export const IconPlus = (p: IconProps) => (
   <Stroke {...p}><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></Stroke>
 );
 
+export const IconEdit = (p: IconProps) => (
+  <Stroke {...p}>
+    <path d="M15.5 4.5 19.5 8.5 8 20H4v-4L15.5 4.5z" />
+    <line x1="13.5" y1="6.5" x2="17.5" y2="10.5" />
+  </Stroke>
+);
+
 export const IconHelp = (p: IconProps) => (
   <Stroke {...p}>
     <circle cx="12" cy="12" r="9" />

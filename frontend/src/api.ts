@@ -41,6 +41,9 @@ export interface RepoMeta {
   files: number;
   chunks: number;
   repo_dir?: string;
+  /** Friendly label for the sidebar — a user-set name, or a default derived
+   * from the source (e.g. "weather") when they haven't renamed it yet. */
+  display_name?: string;
 }
 
 export interface ToolCall {
@@ -162,3 +165,10 @@ export const deleteRepo = async (repo_id: string): Promise<void> => {
   });
   await handle(res);
 };
+
+export const renameRepo = (repo_id: string, display_name: string) =>
+  fetch(BASE + `/api/repos/${encodeURIComponent(repo_id)}`, {
+    method: "PATCH",
+    headers: headers(),
+    body: JSON.stringify({ display_name }),
+  }).then((res) => handle<{ repo_id: string; display_name: string }>(res));

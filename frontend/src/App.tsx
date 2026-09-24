@@ -6,6 +6,7 @@ import {
   clearApiKey,
   clearToken,
   deleteRepo,
+  renameRepo,
   getApiKey,
   getHealth,
   getMessages,
@@ -37,6 +38,7 @@ import {
   IconSearch,
   IconSend,
   IconSun,
+  IconEdit,
   IconTrash,
   IconXSmall,
 } from "./icons";
@@ -464,6 +466,8 @@ export default function App() {
   const [showKeyPanel, setShowKeyPanel] = useState(false);
   const [hasKey, setHasKey] = useState(!!getApiKey());
   const [confirmDeleteId, setConfirmDeleteId] = useState("");
+  const [renamingId, setRenamingId] = useState("");
+  const [renameDraft, setRenameDraft] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const chatWindowRef = useRef<HTMLDivElement>(null);
 
@@ -559,6 +563,22 @@ export default function App() {
     setConfirmDeleteId("");
   }
 
+  function startRename(r: RepoMeta) {
+    setRenamingId(r.repo_id);
+    setRenameDraft(r.display_name ?? r.repo_id);
+  }
+  async function commitRename(id: string) {
+    const name = renameDraft.trim();
+    setRenamingId("");
+    if (!name || name === repos[id]?.display_name) return;
+    try {
+      await renameRepo(id, name);
+      setRepos((r) => ({ ...r, [id]: { ...r[id], display_name: name } }));
+    } catch (e) {
+      handleRequestError(e);
+    }
+  }
+
   async function onSend() {
     const q = draft.trim();
     if (!repoId || !q || askBusy) return;
@@ -587,7 +607,11 @@ export default function App() {
   const repoList = Object.values(repos);
   const q = search.trim().toLowerCase();
   const filteredRepos = q
-    ? repoList.filter((r) => r.repo_id.toLowerCase().includes(q) || r.source.toLowerCase().includes(q))
+    ? repoList.filter((r) =>
+        r.repo_id.toLowerCase().includes(q) ||
+        r.source.toLowerCase().includes(q) ||
+        (r.display_name ?? "").toLowerCase().includes(q)
+      )
     : repoList;
   const activeRepo = repos[repoId];
 
@@ -655,12 +679,32 @@ export default function App() {
                 <div
                   key={r.repo_id}
                   className={r.repo_id === repoId ? "sidebar-item active" : "sidebar-item"}
-                  onClick={() => { setRepoId(r.repo_id); setSidebarOpen(false); }}
+                  onClick={() => {
+                    if (renamingId === r.repo_id) return;
+                    setRepoId(r.repo_id); setSidebarOpen(false);
+                  }}
                 >
                   <IconChat width={16} height={16} />
                   <div className="sidebar-item-text">
-                    <div className="sidebar-item-title">{r.repo_id}</div>
-                    <div className="sidebar-item-sub">{r.files} files · {r.chunks} chunks</div>
+                    {renamingId === r.repo_id ? (
+                      <input
+                        autoFocus
+                        className="sidebar-rename-input"
+                        value={renameDraft}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => setRenameDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") { e.preventDefault(); commitRename(r.repo_id); }
+                          if (e.key === "Escape") { e.preventDefault(); setRenamingId(""); }
+                        }}
+                        onBlur={() => commitRename(r.repo_id)}
+                      />
+                    ) : (
+                      <>
+                        <div className="sidebar-item-title">{r.display_name ?? r.repo_id}</div>
+                        <div className="sidebar-item-sub">{r.files} files · {r.chunks} chunks</div>
+                      </>
+                    )}
                   </div>
                   {confirmDeleteId === r.repo_id ? (
                     <div className="sidebar-item-confirm" onClick={(e) => e.stopPropagation()}>
@@ -671,14 +715,23 @@ export default function App() {
                         <IconXSmall width={14} height={14} />
                       </button>
                     </div>
-                  ) : (
-                    <button
-                      className="sidebar-item-delete"
-                      onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(r.repo_id); }}
-                      title="Delete this repo"
-                    >
-                      <IconTrash width={15} height={15} />
-                    </button>
+                  ) : renamingId === r.repo_id ? null : (
+                    <div className="sidebar-item-actions">
+                      <button
+                        className="sidebar-item-action"
+                        onClick={(e) => { e.stopPropagation(); startRename(r); }}
+                        title="Rename"
+                      >
+                        <IconEdit width={14} height={14} />
+                      </button>
+                      <button
+                        className="sidebar-item-action danger-hover"
+                        onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(r.repo_id); }}
+                        title="Delete this repo"
+                      >
+                        <IconTrash width={15} height={15} />
+                      </button>
+                    </div>
                   )}
                 </div>
               ))
@@ -706,7 +759,7 @@ export default function App() {
             <div className="chat-panel main-chat">
               <div className="chat-header">
                 <IconChat width={16} height={16} />
-                <div className="chat-header-title">{activeRepo?.repo_id ?? repoId}</div>
+                <div className="chat-header-title">{activeRepo?.display_name ?? activeRepo?.repo_id ?? repoId}</div>
                 <div className="muted chat-header-sub">{activeRepo?.source}</div>
               </div>
 

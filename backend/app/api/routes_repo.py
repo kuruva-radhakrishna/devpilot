@@ -10,13 +10,17 @@ from app.config import get_settings
 from app.db import store as pstore
 from app.llm.client import embed_signature
 from app.llm.keyctx import reset_request_key, set_request_key
-from app.rag.ingest import ingest_repo, make_repo_id, prepare_repo_dir
+from app.rag.ingest import default_display_name, ingest_repo, make_repo_id, prepare_repo_dir
 
 router = APIRouter(prefix="/api/repos", tags=["repos"])
 
 
 class IngestRequest(BaseModel):
     source: str  # GitHub URL or local filesystem path
+
+
+class RenameRequest(BaseModel):
+    display_name: str
 
 
 def _persistent(user: dict) -> bool:
@@ -50,6 +54,7 @@ def ingest(
                 else:
                     summary = ingest_repo(req.source)
                 pstore.upsert_user_repo(user["id"], repo_key, summary)
+                summary = {**summary, "display_name": default_display_name(req.source)}
             else:
                 summary = ingest_repo(req.source)
                 if summary.get("repo_dir"):
@@ -66,6 +71,21 @@ def list_repos(user: dict = Depends(get_current_user)):
     if _persistent(user):
         return {"repos": pstore.list_user_repos(user["id"])}
     return {"repos": registry.all_repos()}
+
+
+@router.patch("/{repo_id}")
+def rename_repo(repo_id: str, req: RenameRequest, user: dict = Depends(get_current_user)):
+    """Rename the caller's own copy of a repo (the sidebar label — not a
+    shared/global rename; someone else's copy of the same source keeps
+    whatever name they gave it, or the default)."""
+    if not _persistent(user):
+        raise HTTPException(400, "Renaming requires an account (no DATABASE_URL configured).")
+    name = req.display_name.strip()
+    if not name:
+        raise HTTPException(400, "Name can't be empty.")
+    if not pstore.rename_user_repo(user["id"], repo_id, name):
+        raise HTTPException(404, f"Unknown repo_id '{repo_id}'. Ingest it first.")
+    return {"repo_id": repo_id, "display_name": name}
 
 
 @router.delete("/{repo_id}")

@@ -400,15 +400,19 @@ button.mobile-menu-btn { display: none; }
 .sidebar-item-text { flex: 1; min-width: 0; }
 .sidebar-item-title { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sidebar-item-sub { font-size: 11.5px; color: var(--muted-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sidebar-item-delete {
+.sidebar-item-actions { display: flex; gap: 2px; flex: none; }
+.sidebar-item-action {
   flex: none; background: transparent; border: none; padding: 4px; color: var(--muted-dim);
   opacity: 0; display: grid; place-items: center; border-radius: 6px;
 }
-.sidebar-item:hover .sidebar-item-delete, .sidebar-item.active .sidebar-item-delete { opacity: 1; }
-.sidebar-item-delete:hover { color: var(--danger); background: var(--danger-dim); filter: none; }
+.sidebar-item:hover .sidebar-item-action, .sidebar-item.active .sidebar-item-action { opacity: 1; }
+.sidebar-item-action:hover { color: var(--text); background: var(--panel-hover); filter: none; }
+.sidebar-item-action.danger-hover:hover { color: var(--danger); background: var(--danger-dim); }
 .sidebar-item-confirm { display: flex; gap: 4px; flex: none; }
 .sidebar-item-confirm .icon-btn { width: 26px; height: 26px; }
 .sidebar-item-confirm .icon-btn.danger { color: var(--danger); border-color: var(--danger); background: var(--danger-dim); }
+
+.sidebar-rename-input { padding: 3px 6px; font-size: 13.5px; border-color: var(--accent-border); }
 
 .sidebar-footer { flex: none; display: flex; flex-direction: column; gap: 4px; padding-top: 8px; border-top: 1px solid var(--border); }
 .sidebar-footer-btn {

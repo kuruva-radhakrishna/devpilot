@@ -19,6 +19,7 @@ from typing import Any
 import psycopg
 
 from app.config import get_settings
+from app.rag.ingest import default_display_name
 
 # code_chunks is created here too (not just docker-compose's schema.sql),
 # since a managed host like Supabase never runs that file automatically.
@@ -50,9 +51,14 @@ CREATE TABLE IF NOT EXISTS repos (
     provider     TEXT,
     embedding_model      TEXT,
     embedding_dimensions INTEGER,
+    display_name TEXT,
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (user_id, repo_key)
 );
+-- Added after the initial launch — IF NOT EXISTS so an existing repos table
+-- (rows already present) stays valid; NULL means "not renamed yet", falling
+-- back to default_display_name(source) when read.
+ALTER TABLE repos ADD COLUMN IF NOT EXISTS display_name TEXT;
 
 CREATE TABLE IF NOT EXISTS messages (
     id          BIGSERIAL PRIMARY KEY,
@@ -80,7 +86,7 @@ def init_store() -> None:
 
 
 _REPO_COLUMNS = """repo_key, source, repo_dir, files, chunks, note,
-                    provider, embedding_model, embedding_dimensions"""
+                    provider, embedding_model, embedding_dimensions, display_name"""
 
 
 def _row_to_repo(row) -> dict[str, Any]:
@@ -88,6 +94,9 @@ def _row_to_repo(row) -> dict[str, Any]:
         "repo_id": row[0], "source": row[1], "repo_dir": row[2],
         "files": row[3], "chunks": row[4], "note": row[5],
         "provider": row[6], "embedding_model": row[7], "embedding_dimensions": row[8],
+        # Never NULL from here — the frontend always gets something displayable,
+        # whether or not the user has renamed it.
+        "display_name": row[9] or default_display_name(row[1]),
     }
 
 
@@ -133,21 +142,38 @@ def upsert_user_repo(user_id: int, repo_key: str, meta: dict) -> None:
         cur.execute(
             """INSERT INTO repos
                    (user_id, repo_key, source, repo_dir, files, chunks, note,
-                    provider, embedding_model, embedding_dimensions)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    provider, embedding_model, embedding_dimensions, display_name)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                ON CONFLICT (user_id, repo_key) DO UPDATE SET
                    source = EXCLUDED.source, repo_dir = EXCLUDED.repo_dir,
                    files = EXCLUDED.files, chunks = EXCLUDED.chunks,
                    note = EXCLUDED.note, provider = EXCLUDED.provider,
                    embedding_model = EXCLUDED.embedding_model,
-                   embedding_dimensions = EXCLUDED.embedding_dimensions""",
+                   embedding_dimensions = EXCLUDED.embedding_dimensions
+                   -- display_name is deliberately NOT touched on conflict —
+                   -- a re-ingest of an already-owned repo must not clobber a
+                   -- name the user already gave it.""",
             (
                 user_id, repo_key, meta.get("source", ""), meta.get("repo_dir", ""),
                 meta.get("files", 0), meta.get("chunks", 0), meta.get("note"),
                 meta.get("provider"), meta.get("embedding_model"), meta.get("embedding_dimensions"),
+                None,  # only ever set on first insert; renamed later via rename_user_repo
             ),
         )
         conn.commit()
+
+
+def rename_user_repo(user_id: int, repo_key: str, display_name: str) -> bool:
+    """Set a custom display name for the caller's own copy of a repo. Returns
+    False if the caller doesn't own this repo_key (nothing to rename)."""
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            "UPDATE repos SET display_name = %s WHERE user_id = %s AND repo_key = %s",
+            (display_name.strip()[:200] or None, user_id, repo_key),
+        )
+        updated = cur.rowcount > 0
+        conn.commit()
+    return updated
 
 
 def delete_user_repo(user_id: int, repo_key: str) -> bool:

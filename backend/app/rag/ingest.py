@@ -37,12 +37,23 @@ def signature_matches(meta: dict) -> bool:
     return all(meta.get(k) == v for k, v in sig.items())
 
 
+def _base_name(source: str) -> str:
+    """The human-readable component of a source, before make_repo_id()'s
+    disambiguating hash suffix — e.g. '.../kuruva-radhakrishna/weather' -> 'weather'."""
+    base = source.rstrip("/").split("/")[-1].replace(".git", "")
+    return re.sub(r"[^A-Za-z0-9_.-]", "-", base) or "repo"
+
+
 def make_repo_id(source: str) -> str:
     """Human-ish, filesystem-safe id for a repo source."""
-    base = source.rstrip("/").split("/")[-1].replace(".git", "")
-    base = re.sub(r"[^A-Za-z0-9_.-]", "-", base) or "repo"
     digest = hashlib.sha1(source.encode()).hexdigest()[:8]
-    return f"{base}-{digest}"
+    return f"{_base_name(source)}-{digest}"
+
+
+def default_display_name(source: str) -> str:
+    """Friendly default shown in the UI (e.g. sidebar) until a user renames
+    it — the repo_id's hash suffix is meaningless to look at day to day."""
+    return _base_name(source)
 
 
 def prepare_repo_dir(source: str, repo_id: str) -> str:
