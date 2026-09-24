@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
 import {
   ask,
   AuthError,
@@ -13,13 +14,13 @@ import {
   register,
   setApiKey,
   setToken,
-  type AskResponse,
   type Health,
   type RepoMeta,
 } from "./api";
 import {
   BrandMark,
   IconBars,
+  IconBot,
   IconChat,
   IconCheck,
   IconHelp,
@@ -28,6 +29,7 @@ import {
   IconMoon,
   IconNetwork,
   IconSearch,
+  IconSend,
   IconSettings,
   IconSun,
 } from "./icons";
@@ -40,6 +42,21 @@ const FEATURES = [
   { Icon: IconNetwork, title: "Provider-agnostic", body: "Runs on Gemini or a local Ollama model." },
   { Icon: IconKey, title: "Bring your own key", body: "Use your own free key — the demo quota never runs out." },
 ];
+
+function describeError(e: unknown): string {
+  if (e instanceof AuthError) return "Your session ended — please log in again.";
+  if (e instanceof TypeError) {
+    // fetch() throws a bare TypeError (not an HTTP error) when the connection
+    // itself failed — e.g. a host request-duration limit killing a long
+    // request. There's no server response to show.
+    return (
+      "Network error — the request was interrupted before it finished. " +
+      "Large repos (or free-tier rate-limit backoffs) can take a while and may " +
+      "exceed the hosting timeout; try again, a smaller repo, or your own API key."
+    );
+  }
+  return (e as Error).message || "Something went wrong.";
+}
 
 function Wordmark() {
   return (
@@ -135,6 +152,42 @@ function FeatureList() {
         </div>
       ))}
     </>
+  );
+}
+
+interface ChatMessage {
+  role: "user" | "assistant" | "error";
+  content: string;
+  toolNames?: string[];
+}
+
+function ChatBubble({ msg }: { msg: ChatMessage }) {
+  if (msg.role === "user") {
+    return (
+      <div className="bubble-row user">
+        <div className="bubble user">{msg.content}</div>
+      </div>
+    );
+  }
+  return (
+    <div className="bubble-row assistant">
+      <div className={msg.role === "error" ? "bubble error" : "bubble assistant"}>
+        <ReactMarkdown>{msg.content}</ReactMarkdown>
+        {!!msg.toolNames?.length && (
+          <div className="bubble-tools">🔧 {msg.toolNames.join(", ")}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TypingBubble() {
+  return (
+    <div className="bubble-row assistant">
+      <div className="bubble assistant typing">
+        <span className="typing-dots"><span /><span /><span /></span>
+      </div>
+    </div>
   );
 }
 
@@ -310,8 +363,9 @@ export default function App() {
   const [repos, setRepos] = useState<Record<string, RepoMeta>>({});
   const [source, setSource] = useState("");
   const [repoId, setRepoId] = useState("");
-  const [question, setQuestion] = useState("");
-  const [result, setResult] = useState<AskResponse | null>(null);
+  const [draft, setDraft] = useState("");
+  // Chat history per repo, so switching repos keeps each conversation intact.
+  const [chats, setChats] = useState<Record<string, ChatMessage[]>>({});
   // Separate flags: ingest and ask are independent, unrelated requests — a
   // shared flag made "Ask DevPilot" show "Thinking…" while only Ingest was
   // running (and vice versa), which reads as a false/stuck request.
@@ -319,6 +373,17 @@ export default function App() {
   const [askBusy, setAskBusy] = useState(false);
   const [error, setError] = useState("");
   const [showHelp, setShowHelp] = useState(false);
+  const chatWindowRef = useRef<HTMLDivElement>(null);
+
+  const messages = chats[repoId] ?? [];
+  function appendMessage(id: string, msg: ChatMessage) {
+    setChats((c) => ({ ...c, [id]: [...(c[id] ?? []), msg] }));
+  }
+
+  useEffect(() => {
+    const el = chatWindowRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages.length, askBusy]);
 
   useEffect(() => {
     getHealth().then(setHealth).catch(() => setHealth(null));
@@ -341,27 +406,14 @@ export default function App() {
   }, [showApp]);
 
   function handleRequestError(e: unknown) {
-    if (e instanceof AuthError) {
-      setAuthed(false);
-      setError("Your session ended — please log in again.");
-    } else if (e instanceof TypeError) {
-      // fetch() throws a bare TypeError (not an HTTP error) when the
-      // connection itself failed — e.g. a host request-duration limit
-      // killing a long-running ingest. There's no server response to show.
-      setError(
-        "Network error — the request was interrupted before it finished. " +
-        "Large repos (or free-tier rate-limit backoffs) can take a while and may " +
-        "exceed the hosting timeout; try a smaller repo, or your own API key, or try again."
-      );
-    } else {
-      setError((e as Error).message);
-    }
+    if (e instanceof AuthError) setAuthed(false);
+    setError(describeError(e));
   }
 
   function logout() {
     clearToken();
     setAuthed(false);
-    setResult(null);
+    setChats({});
     setRepos({});
   }
 
@@ -376,13 +428,25 @@ export default function App() {
     finally { setIngestBusy(false); }
   }
 
-  async function onAsk() {
-    if (!repoId || !question.trim()) return;
-    setError(""); setAskBusy(true); setResult(null);
+  async function onSend() {
+    const q = draft.trim();
+    if (!repoId || !q || askBusy) return;
+    const id = repoId;
+    appendMessage(id, { role: "user", content: q });
+    setDraft(""); setAskBusy(true);
     try {
-      setResult(await ask(repoId, question.trim()));
-    } catch (e) { handleRequestError(e); }
-    finally { setAskBusy(false); }
+      const res = await ask(id, q);
+      appendMessage(id, {
+        role: "assistant",
+        content: res.answer,
+        toolNames: res.tool_calls.map((tc) => tc.name),
+      });
+    } catch (e) {
+      if (e instanceof AuthError) setAuthed(false);
+      appendMessage(id, { role: "error", content: describeError(e) });
+    } finally {
+      setAskBusy(false);
+    }
   }
 
   const examples = [
@@ -436,10 +500,11 @@ export default function App() {
         <div className="muted" style={{ marginTop: 8 }}>
           Indexing embeds the code into the vector store — larger repos take longer.
         </div>
+        {error && <div className="error">{error}</div>}
       </div>
 
-      {/* Step 2: Ask */}
-      <div className="panel step">
+      {/* Step 2: Chat */}
+      <div className="panel step chat-panel">
         <div className="step-badge">2</div>
         <label>Repository</label>
         <select value={repoId} onChange={(e) => setRepoId(e.target.value)}>
@@ -451,41 +516,44 @@ export default function App() {
           ))}
         </select>
 
-        <div style={{ height: 14 }} />
-        <label>Question</label>
-        <textarea
-          rows={3}
-          placeholder="Why does the login endpoint return 401 with valid credentials?"
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-        />
-        <div style={{ margin: "10px 0" }}>
-          {examples.map((ex) => (
-            <span className="pill" key={ex} onClick={() => setQuestion(ex)}>{ex}</span>
-          ))}
-        </div>
-        <button onClick={onAsk} disabled={askBusy || !repoId || !question.trim()}>
-          {askBusy ? "Thinking…" : "Ask DevPilot"}
-        </button>
-        {error && <div className="error">{error}</div>}
-      </div>
-
-      {/* Result */}
-      {result && (
-        <div className="panel">
-          <div className="answer">{result.answer}</div>
-          <div className="tools">
-            <div className="muted" style={{ marginBottom: 8 }}>
-              Agent took {result.steps} tool call{result.steps === 1 ? "" : "s"}:
-            </div>
-            {result.tool_calls.map((tc, i) => (
-              <div className="tool" key={i}>
-                {tc.name}({JSON.stringify(tc.args)})
+        <div className="chat-window" ref={chatWindowRef}>
+          {messages.length === 0 ? (
+            <div className="chat-empty">
+              <IconBot width={26} height={26} />
+              <div>{repoId ? "Ask anything about this repo." : "Select a repo above, then start chatting."}</div>
+              <div className="chat-suggestions">
+                {examples.map((ex) => (
+                  <span className="pill" key={ex} onClick={() => setDraft(ex)}>{ex}</span>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          ) : (
+            messages.map((m, i) => <ChatBubble key={i} msg={m} />)
+          )}
+          {askBusy && <TypingBubble />}
         </div>
-      )}
+
+        <div className="chat-input-row">
+          <textarea
+            rows={1}
+            placeholder={repoId ? "Message DevPilot…" : "Select a repo first…"}
+            value={draft}
+            disabled={!repoId}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); }
+            }}
+          />
+          <button
+            className="send-btn"
+            onClick={onSend}
+            disabled={askBusy || !repoId || !draft.trim()}
+            title="Send"
+          >
+            <IconSend width={16} height={16} />
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -84,6 +84,24 @@ export const IconMoon = (p: IconProps) => (
   </svg>
 );
 
+export const IconSend = (p: IconProps) => (
+  <Stroke {...p}>
+    <line x1="21" y1="3" x2="10.5" y2="13.5" />
+    <path d="M21 3 14.5 21 10.5 13.5 3 9.5 21 3z" />
+  </Stroke>
+);
+
+export const IconBot = (p: IconProps) => (
+  <Stroke {...p}>
+    <rect x="4" y="8" width="16" height="12" rx="3" />
+    <line x1="12" y1="4.5" x2="12" y2="8" />
+    <circle cx="12" cy="3.2" r="1.1" fill="currentColor" stroke="none" />
+    <circle cx="9" cy="14" r="1.2" fill="currentColor" stroke="none" />
+    <circle cx="15" cy="14" r="1.2" fill="currentColor" stroke="none" />
+    <line x1="8.5" y1="18" x2="15.5" y2="18" />
+  </Stroke>
+);
+
 export const IconHelp = (p: IconProps) => (
   <Stroke {...p}>
     <circle cx="12" cy="12" r="9" />
