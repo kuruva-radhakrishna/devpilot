@@ -31,7 +31,7 @@ def get_current_user(
     returns an anonymous principal so local dev needs no login.
     """
     if not get_settings().auth_available:
-        return {"id": None, "email": "anonymous", "anonymous": True}
+        return {"id": None, "email": "anonymous", "name": "", "anonymous": True}
 
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(401, "Not authenticated. Log in to use DevPilot.")
@@ -42,7 +42,12 @@ def get_current_user(
         raise HTTPException(401, "Session expired. Please log in again.")
     except jwt.PyJWTError:
         raise HTTPException(401, "Invalid session token.")
-    return {"id": int(claims["sub"]), "email": claims.get("email", ""), "anonymous": False}
+    return {
+        "id": int(claims["sub"]),
+        "email": claims.get("email", ""),
+        "name": claims.get("name", ""),
+        "anonymous": False,
+    }
 
 
 # Convenience: routers list this in `dependencies=[...]`. Plain function

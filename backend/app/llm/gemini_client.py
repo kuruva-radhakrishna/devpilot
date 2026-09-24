@@ -149,6 +149,16 @@ def embed_query(text: str) -> list[float]:
     return embed_texts([text], task_type="retrieval_query")[0]
 
 
+def validate_key() -> None:
+    """Cheaply verify the effective key (request BYOK key or server key) is a
+    real, working Gemini credential. Fetches model metadata rather than
+    generating anything, so it doesn't spend generate/embed quota — raises on
+    an invalid key exactly like any other Gemini SDK call would."""
+    _ensure_configured()
+    settings = get_settings()
+    genai.get_model(f"models/{settings.gemini_embed_model}")
+
+
 # --------------------------------------------------------------------------- #
 # Generation
 # --------------------------------------------------------------------------- #

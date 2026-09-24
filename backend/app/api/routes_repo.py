@@ -66,3 +66,17 @@ def list_repos(user: dict = Depends(get_current_user)):
     if _persistent(user):
         return {"repos": pstore.list_user_repos(user["id"])}
     return {"repos": registry.all_repos()}
+
+
+@router.delete("/{repo_id}")
+def delete_repo(repo_id: str, user: dict = Depends(get_current_user)):
+    """Remove this repo from the caller's own list + their chat history for
+    it. The underlying embedded chunks (shared across users who ingested the
+    same source) are only deleted once no one else still owns them."""
+    if not _persistent(user):
+        raise HTTPException(400, "Deleting requires an account (no DATABASE_URL configured).")
+    other_owner_left = pstore.delete_user_repo(user["id"], repo_id)
+    if not other_owner_left:
+        from app.rag.vector_store import get_store
+        get_store().delete_repo(repo_id)
+    return {"deleted": True}

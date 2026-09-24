@@ -150,6 +150,20 @@ def upsert_user_repo(user_id: int, repo_key: str, meta: dict) -> None:
         conn.commit()
 
 
+def delete_user_repo(user_id: int, repo_key: str) -> bool:
+    """Remove a user's ownership row + their chat history for a repo. Returns
+    True if any *other* user still owns this repo_key — the caller uses that
+    to decide whether the underlying embedded chunks (shared across owners)
+    are safe to delete too, or still in use."""
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM repos WHERE user_id = %s AND repo_key = %s", (user_id, repo_key))
+        cur.execute("DELETE FROM messages WHERE user_id = %s AND repo_key = %s", (user_id, repo_key))
+        cur.execute("SELECT 1 FROM repos WHERE repo_key = %s LIMIT 1", (repo_key,))
+        other_owner_left = cur.fetchone() is not None
+        conn.commit()
+    return other_owner_left
+
+
 def save_message(user_id: int, repo_key: str, role: str, content: str, tool_names: list[str] | None = None) -> None:
     with _connect() as conn, conn.cursor() as cur:
         cur.execute(

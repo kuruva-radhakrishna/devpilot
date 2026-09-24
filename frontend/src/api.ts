@@ -103,13 +103,23 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 export interface AuthResponse {
   token: string;
   email: string;
+  name: string;
 }
 
-export const register = (email: string, password: string) =>
-  post<AuthResponse>("/api/auth/register", { email, password });
+export const register = (email: string, password: string, name: string) =>
+  post<AuthResponse>("/api/auth/register", { email, password, name });
 
 export const login = (email: string, password: string) =>
   post<AuthResponse>("/api/auth/login", { email, password });
+
+/** Tests a Gemini key with a cheap, no-generation call. Pass an explicit key
+ * to test a candidate before saving it — falls back to the saved one. */
+export const validateKey = async (candidateKey?: string): Promise<{ valid: boolean; detail?: string }> => {
+  const h = headers(false);
+  if (candidateKey !== undefined) h["X-Gemini-Key"] = candidateKey;
+  const res = await fetch(BASE + "/api/auth/validate-key", { method: "POST", headers: h });
+  return handle(res);
+};
 
 export const getHealth = async (): Promise<Health> => {
   const res = await fetch(BASE + "/api/health");
@@ -143,4 +153,12 @@ export const getMessages = async (repo_id: string): Promise<StoredMessage[]> => 
   });
   const data = await handle<{ messages?: StoredMessage[] }>(res);
   return data.messages ?? [];
+};
+
+export const deleteRepo = async (repo_id: string): Promise<void> => {
+  const res = await fetch(BASE + `/api/repos/${encodeURIComponent(repo_id)}`, {
+    method: "DELETE",
+    headers: headers(false),
+  });
+  await handle(res);
 };

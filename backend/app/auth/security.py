@@ -31,12 +31,13 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
-def make_token(user_id: int, email: str) -> str:
+def make_token(user_id: int, email: str, name: str = "") -> str:
     s = get_settings()
     now = int(time.time())
     payload = {
         "sub": str(user_id),
         "email": email,
+        "name": name,
         "iat": now,
         "exp": now + s.jwt_expire_hours * 3600,
     }

@@ -102,6 +102,36 @@ export const IconBot = (p: IconProps) => (
   </Stroke>
 );
 
+export const IconTrash = (p: IconProps) => (
+  <Stroke {...p}>
+    <line x1="4" y1="7" x2="20" y2="7" />
+    <path d="M6 7 7 20a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13" />
+    <line x1="9.5" y1="11" x2="9.5" y2="17" />
+    <line x1="14.5" y1="11" x2="14.5" y2="17" />
+    <path d="M9 7V4.5A1.5 1.5 0 0 1 10.5 3h3A1.5 1.5 0 0 1 15 4.5V7" />
+  </Stroke>
+);
+
+export const IconMenu = (p: IconProps) => (
+  <Stroke {...p}>
+    <line x1="4" y1="6.5" x2="20" y2="6.5" />
+    <line x1="4" y1="12" x2="20" y2="12" />
+    <line x1="4" y1="17.5" x2="20" y2="17.5" />
+  </Stroke>
+);
+
+export const IconCheckSmall = (p: IconProps) => (
+  <Stroke {...p}><polyline points="5,12.5 9.5,17 19,7" /></Stroke>
+);
+
+export const IconXSmall = (p: IconProps) => (
+  <Stroke {...p}><line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" /></Stroke>
+);
+
+export const IconPlus = (p: IconProps) => (
+  <Stroke {...p}><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></Stroke>
+);
+
 export const IconHelp = (p: IconProps) => (
   <Stroke {...p}>
     <circle cx="12" cy="12" r="9" />
