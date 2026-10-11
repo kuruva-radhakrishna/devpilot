@@ -20,10 +20,9 @@ services:
         generateValue: true
       - key: FRONTEND_URL          # where emailed password-reset links point
         value: https://devpilot-ruby.vercel.app
-      - key: MAIL_FROM             # a sender address verified with your email provider
-        sync: false
-      - key: BREVO_API_KEY         # optional — turns on "Forgot password" (see DEPLOY.md)
-        sync: false
+      # To turn on "Forgot password", also set BREVO_API_KEY and MAIL_FROM in the Render
+      # dashboard (see DEPLOY.md). They aren't listed here on purpose: a secret-less
+      # `sync: false` entry makes a Blueprint sync wait for input.
       - key: LLM_PROVIDER
         value: gemini
       - key: GEMINI_MODEL

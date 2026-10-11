@@ -13,6 +13,8 @@ from __future__ import annotations
 import threading
 import time
 
+import psycopg
+
 from app.auth import db
 
 _TTL_SECONDS = 20.0
@@ -27,7 +29,14 @@ def get_version(user_id: int) -> int | None:
         hit = _cache.get(user_id)
         if hit and now - hit[1] < _TTL_SECONDS:
             return hit[0]
-    version = db.get_token_version(user_id)
+    try:
+        version = db.get_token_version(user_id)
+    except (psycopg.errors.UndefinedColumn, psycopg.errors.UndefinedTable):
+        # The boot-time migration (db.init_db) didn't run — e.g. the database was
+        # unreachable for a moment during startup. Run it now rather than leave every
+        # signed-in user locked out until the next restart, then retry once.
+        db.init_db()
+        version = db.get_token_version(user_id)
     with _lock:
         if len(_cache) > 5000:  # bounded: drop everything rather than track LRU order
             _cache.clear()

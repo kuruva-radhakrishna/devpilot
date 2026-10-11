@@ -381,6 +381,26 @@ def test_account_endpoints_need_a_real_logged_in_user(env, monkeypatch):
     assert anon.status_code == 400 and "aren't enabled" in anon.json()["detail"]
 
 
+def test_missing_migration_heals_itself_instead_of_locking_everyone_out(env, monkeypatch):
+    """If boot-time init_db never ran (DB unreachable at startup), the first session
+    check creates the column and carries on."""
+    token = _register(env).json()["token"]
+    session._cache.clear()
+    calls = {"init": 0, "get": 0}
+    real_get = env.fake.get_token_version
+
+    def flaky_get(user_id):
+        calls["get"] += 1
+        if calls["get"] == 1:
+            raise psycopg.errors.UndefinedColumn("column token_version does not exist")
+        return real_get(user_id)
+
+    monkeypatch.setattr(db, "get_token_version", flaky_get)
+    monkeypatch.setattr(db, "init_db", lambda: calls.__setitem__("init", calls["init"] + 1))
+    assert env.client.get("/api/auth/me", headers=_bearer(token)).status_code == 200
+    assert calls == {"init": 1, "get": 2}
+
+
 def test_tokens_from_before_session_versions_existed_still_work(env, monkeypatch):
     """Sessions issued by the previous release have no `tv` claim; they must keep
     working (as version 0) rather than logging every existing user out."""
