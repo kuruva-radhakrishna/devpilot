@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     # message points to gemini-3.5-flash-lite as the replacement.
     gemini_model: str = "gemini-3.5-flash-lite"
     gemini_embed_model: str = "gemini-embedding-001"
+    # Override the API host (tests, corporate proxies). Empty = Google's default.
+    gemini_base_url: str = ""
     # gemini-embedding-001 defaults to 3072 dims but supports output_dimensionality;
     # we pin 768 to keep vectors compact and match the pgvector schema.
     embed_dim: int = 768
@@ -98,6 +100,28 @@ class Settings(BaseSettings):
     # anyone who knows this value can mint valid sessions.
     jwt_secret: str = "dev-insecure-change-me"
     jwt_expire_hours: int = 168  # 7 days
+
+    # --- Password-reset email (optional; see app/auth/mailer.py) ---
+    # Set MAIL_FROM plus ONE of BREVO_API_KEY / RESEND_API_KEY to enable "Forgot
+    # password". Without them the feature reports itself as disabled.
+    brevo_api_key: str = ""
+    resend_api_key: str = ""
+    mail_from: str = ""            # a sender address verified with your provider
+    mail_from_name: str = "DevPilot"
+    # Where reset links point (the deployed frontend). Falls back to the first
+    # allowed CORS origin that isn't a wildcard.
+    frontend_url: str = ""
+    password_reset_minutes: int = 30
+
+    @property
+    def reset_base_url(self) -> str:
+        if self.frontend_url:
+            return self.frontend_url.rstrip("/")
+        for origin in self.allowed_origins.split(","):
+            origin = origin.strip()
+            if origin and origin != "*":
+                return origin.rstrip("/")
+        return "http://localhost:5173"
 
     @property
     def pg_dsn(self) -> str:

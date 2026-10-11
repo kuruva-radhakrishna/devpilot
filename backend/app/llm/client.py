@@ -61,6 +61,16 @@ def record_usage(resp: Any) -> None:
     get_provider().record_usage(resp)
 
 
+def describe_error(exc: Exception) -> str:
+    """A short, user-presentable message for a provider failure. Gemini's SDK errors
+    carry a clean `.message` and `.status`; their str() is a raw JSON dump."""
+    message = getattr(exc, "message", None)
+    status = getattr(exc, "status", None)
+    if message:
+        return f"{status}: {message}" if status else str(message)
+    return str(exc)
+
+
 def supports_tools() -> bool:
     return get_provider().supports_tools
 

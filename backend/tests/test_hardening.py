@@ -265,6 +265,9 @@ def hosted_client(monkeypatch, tmp_path):
     monkeypatch.setenv("SANDBOX_BACKEND", "local")
     monkeypatch.setenv("TRACES_DIR", str(tmp_path / "traces"))
     get_settings.cache_clear()
+    # Sessions are checked against the account's current version in Postgres;
+    # these tests aren't about that, so pretend every account is at version 0.
+    monkeypatch.setattr("app.auth.session.get_version", lambda user_id: 0)
     from app.main import app
 
     return TestClient(app)

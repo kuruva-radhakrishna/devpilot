@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from app.auth.deps import get_current_user
+from app.llm.client import describe_error
 from app.llm.keyctx import reset_request_key, set_request_key
 from app.review.reviewer import review_diff
 
@@ -26,7 +27,7 @@ def review(
     try:
         findings = review_diff(req.diff, req.prompt_version)
     except Exception as exc:  # noqa: BLE001 — surface a clean error to the client
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=describe_error(exc))
     finally:
         reset_request_key(token)
     return {"findings": findings, "count": len(findings)}

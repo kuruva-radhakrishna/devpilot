@@ -190,6 +190,24 @@ def delete_user_repo(user_id: int, repo_key: str) -> bool:
     return other_owner_left
 
 
+def delete_all_user_data(user_id: int) -> list[str]:
+    """Remove every repo row and chat message this user owns (account deletion).
+    Returns the repo_keys that NO other user still owns — their shared embedded
+    chunks are now orphaned and the caller should delete them too."""
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT repo_key FROM repos WHERE user_id = %s", (user_id,))
+        keys = [r[0] for r in cur.fetchall()]
+        cur.execute("DELETE FROM repos WHERE user_id = %s", (user_id,))
+        cur.execute("DELETE FROM messages WHERE user_id = %s", (user_id,))
+        orphaned: list[str] = []
+        for key in keys:
+            cur.execute("SELECT 1 FROM repos WHERE repo_key = %s LIMIT 1", (key,))
+            if cur.fetchone() is None:
+                orphaned.append(key)
+        conn.commit()
+    return orphaned
+
+
 def save_message(user_id: int, repo_key: str, role: str, content: str, tool_names: list[str] | None = None) -> None:
     with _connect() as conn, conn.cursor() as cur:
         cur.execute(

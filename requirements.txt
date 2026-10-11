@@ -1,12 +1,16 @@
 # --- Core API ---
-fastapi==0.115.5
+# fastapi / pydantic / pydantic-settings are pinned to the versions the test suite
+# runs against. pydantic must be >= 2.12.5 for google-genai below.
+fastapi==0.141.1
 uvicorn[standard]==0.32.1
-pydantic==2.10.3
-pydantic-settings==2.6.1
+pydantic==2.13.5
+pydantic-settings==2.15.0
 python-dotenv==1.0.1
 
 # --- LLM + embeddings (Google Gemini) ---
-google-generativeai==0.8.3
+# google-genai (not the deprecated google-generativeai): it sends every key,
+# including the newer "AQ." format, as an x-goog-api-key header.
+google-genai==2.29.0
 
 # --- RAG / vector store ---
 numpy==2.1.3

@@ -7,19 +7,16 @@ Model availability varies by key and changes over time, so if a model name
 """
 from __future__ import annotations
 
-import google.generativeai as genai
-
-from app.llm.gemini_client import _ensure_configured
+from app.llm.gemini_client import _client
 
 
 def main() -> None:
-    _ensure_configured()
     embed, generate = [], []
-    for m in genai.list_models():
-        methods = set(m.supported_generation_methods)
-        if "embedContent" in methods:
+    for m in _client().models.list():
+        actions = set(m.supported_actions or [])
+        if "embedContent" in actions:
             embed.append(m.name)
-        if "generateContent" in methods:
+        if "generateContent" in actions:
             generate.append(m.name)
 
     print("Embedding models (for GEMINI_EMBED_MODEL):")

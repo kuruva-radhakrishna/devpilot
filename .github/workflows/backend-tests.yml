@@ -1,0 +1,47 @@
+name: backend-tests
+
+# Runs the backend suite on Python 3.11 (what the Docker image uses) with the exact
+# pinned requirements, against a real Postgres + pgvector. That is the only place
+# the SQL and the Linux-only behaviours (file symlinks) are exercised for real.
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: devpilot_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install pinned requirements
+        run: pip install -r requirements.txt pytest==8.3.4
+      - name: Run backend tests
+        working-directory: backend
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/devpilot_test
+        run: |
+          set -o pipefail
+          python -m pytest tests -q -ra -p no:cacheprovider 2>&1 | tee pytest.log
+      # GitHub only shows full logs to signed-in users; annotations are public.
+      - name: Surface failures as annotations
+        if: failure()
+        working-directory: backend
+        run: |
+          grep -E "^(FAILED|ERROR) " pytest.log | head -40 | while read -r line; do echo "::error::${line}"; done

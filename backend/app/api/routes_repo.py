@@ -8,7 +8,7 @@ from app import registry
 from app.auth.deps import get_current_user
 from app.config import get_settings
 from app.db import store as pstore
-from app.llm.client import embed_signature
+from app.llm.client import describe_error, embed_signature
 from app.llm.keyctx import reset_request_key, set_request_key
 from app.rag.ingest import default_display_name, ingest_repo, make_repo_id, prepare_repo_dir
 
@@ -60,7 +60,7 @@ def ingest(
                 if summary.get("repo_dir"):
                     registry.register(summary["repo_id"], summary)
         except Exception as exc:  # noqa: BLE001 — surface a clean error to the client
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=describe_error(exc))
         return summary
     finally:
         reset_request_key(token)

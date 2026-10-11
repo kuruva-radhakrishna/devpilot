@@ -11,9 +11,12 @@ starting a turn. Every tool reads from it.
 SECURITY NOTE: read_file / search_code are sandboxed to the repo directory via
 _safe_path(). run_tests is intentionally a stub — executing untrusted repo code
 must happen inside an isolated Docker sandbox. See review/ and README "Roadmap".
-"""
-from __future__ import annotations
 
+NOTE: no `from __future__ import annotations` here on purpose. google-genai builds
+each tool's schema AND converts the model's arguments from the functions' real
+type hints; stringified annotations make it fail with "isinstance() arg 2 must be
+a type" on every call.
+"""
 import os
 import re
 import subprocess

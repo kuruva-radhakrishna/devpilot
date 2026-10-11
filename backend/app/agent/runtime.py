@@ -2,9 +2,9 @@
 
 We use Gemini's *automatic* function calling: we hand the model the tool
 functions and it decides which to call and when, feeding results back into the
-conversation until it produces a final answer. We cap the number of tool round
-trips (AGENT_MAX_STEPS) so a confused turn can't loop forever, and we record a
-trace of every tool call for observability + evaluation.
+conversation until it produces a final answer. The SDK enforces a hard cap of
+AGENT_MAX_STEPS tool calls per turn (so a confused turn can't loop forever), and
+we record a trace of every tool call for observability + evaluation.
 
 Why hand-rolled instead of LangGraph? For a learning/portfolio project, owning
 the loop makes the mechanics (planning -> tool call -> observation -> answer)
@@ -71,7 +71,7 @@ def run_agent(
     model = build_tool_model(system=system, tools=ALL_TOOLS)
 
     with tracing.start_trace("agent.run", repo_id=repo_id, question=question, task=task) as tr:
-        chat = model.start_chat(enable_automatic_function_calling=True)
+        chat = model.start_chat()
         # Automatic function calling makes several model calls under the hood; wrap
         # the whole turn so a mid-turn 429 backs off and retries instead of crashing.
         with tracing.span("llm.generate", model=settings.gemini_model, phase="agent-turn"):
@@ -81,11 +81,16 @@ def run_agent(
         # Reconstruct the tool-call trace from the chat history for observability.
         tool_calls = _extract_tool_calls(chat)
         steps = len(tool_calls)
-        if steps > settings.agent_max_steps:  # safety valve
-            tool_calls = tool_calls[: settings.agent_max_steps]
+        answer = (resp.text or "").strip()
+        if not answer and steps >= settings.agent_max_steps:
+            # The SDK stopped calling tools at the cap, so there is no final answer.
+            answer = (
+                f"I used all {steps} tool calls without reaching an answer. "
+                "Try a narrower question, or name the file or function you care about."
+            )
         tracing.add_attrs(steps=steps, tools=[tc.name for tc in tool_calls])
         return AgentResult(
-            answer=resp.text or "", steps=steps, tool_calls=tool_calls,
+            answer=answer, steps=steps, tool_calls=tool_calls,
             trace_id=tr.trace_id if tr else None,
         )
 

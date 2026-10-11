@@ -16,8 +16,10 @@ from __future__ import annotations
 from typing import Any
 
 import jwt
+import psycopg
 from fastapi import Depends, Header, HTTPException
 
+from app.auth import session
 from app.auth.security import decode_token
 from app.config import get_settings
 
@@ -38,12 +40,23 @@ def get_current_user(
     token = authorization.split(" ", 1)[1].strip()
     try:
         claims = decode_token(token)
+        user_id = int(claims["sub"])
+        token_version = int(claims.get("tv", 0))  # tokens from before this field existed are v0
     except jwt.ExpiredSignatureError:
         raise HTTPException(401, "Session expired. Please log in again.")
-    except jwt.PyJWTError:
+    except (jwt.PyJWTError, KeyError, ValueError):
         raise HTTPException(401, "Invalid session token.")
+
+    # A password change/reset or account deletion kills every older session.
+    try:
+        current = session.get_version(user_id)
+    except psycopg.Error:
+        raise HTTPException(503, "Sign-in is temporarily unavailable. Please try again shortly.")
+    if current is None or current != token_version:
+        raise HTTPException(401, "Session expired. Please log in again.")
+
     return {
-        "id": int(claims["sub"]),
+        "id": user_id,
         "email": claims.get("email", ""),
         "name": claims.get("name", ""),
         "anonymous": False,

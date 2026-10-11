@@ -70,6 +70,7 @@ app.include_router(routes_traces.router)
 @app.get("/api/health")
 def health():
     s = get_settings()
+    from app.auth import mailer
     from app.llm.client import provider_name
     return {
         "status": "ok",
@@ -78,4 +79,5 @@ def health():
         "model": s.gemini_model if s.llm_provider == "gemini" else s.ollama_model,
         "gemini_key_set": bool(s.gemini_api_key),
         "auth_enabled": s.auth_available,
+        "email_enabled": s.auth_available and mailer.enabled(),
     }

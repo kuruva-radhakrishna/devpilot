@@ -12,6 +12,7 @@ from app.agent.runtime import run_agent
 from app.auth.deps import get_current_user
 from app.config import get_settings
 from app.db import store as pstore
+from app.llm.client import describe_error
 from app.llm.keyctx import reset_request_key, set_request_key
 from app.obs.store import tag_owner as tag_trace_owner
 from app.rag.ingest import prepare_repo_dir
@@ -80,8 +81,8 @@ def ask(req: AskRequest, x_gemini_key: str | None = Header(default=None), user: 
                 prompt_version=req.prompt_version,
             )
         except Exception as exc:  # noqa: BLE001 — surface a clean error to the client
-            _save("error", str(exc))
-            raise HTTPException(status_code=400, detail=str(exc))
+            _save("error", describe_error(exc))
+            raise HTTPException(status_code=400, detail=describe_error(exc))
     finally:
         reset_request_key(token)
     if _persistent(user):
@@ -124,8 +125,8 @@ def debug(req: DebugRequest, x_gemini_key: str | None = Header(default=None), us
                 prompt_version=req.prompt_version,
             )
         except Exception as exc:  # noqa: BLE001 — surface a clean error to the client
-            _save("error", str(exc))
-            raise HTTPException(status_code=400, detail=str(exc))
+            _save("error", describe_error(exc))
+            raise HTTPException(status_code=400, detail=describe_error(exc))
     finally:
         reset_request_key(token)
     if _persistent(user):
