@@ -21,6 +21,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 
 from app.obs import tracing
+from app.rag.chunker import path_is_within
 from app.rag.retriever import retrieve
 
 # --------------------------------------------------------------------------- #
@@ -51,10 +52,11 @@ def _ctx() -> RepoContext:
 
 
 def _safe_path(rel_path: str) -> str:
-    """Resolve a repo-relative path and refuse anything escaping the repo dir."""
-    root = os.path.abspath(_ctx().repo_dir)
-    target = os.path.abspath(os.path.join(root, rel_path))
-    if os.path.commonpath([root, target]) != root:
+    """Resolve a repo-relative path and refuse anything escaping the repo dir,
+    including via symlinks (realpath, not just abspath)."""
+    root = os.path.realpath(_ctx().repo_dir)
+    target = os.path.realpath(os.path.join(root, rel_path))
+    if not path_is_within(root, target):
         raise ValueError(f"Path escapes repository: {rel_path}")
     return target
 
@@ -121,6 +123,8 @@ def find_references(symbol: str) -> str:
             dirnames[:] = [d for d in dirnames if d not in {".git", "node_modules", ".venv", "__pycache__", "dist", "build"}]
             for name in filenames:
                 fp = os.path.join(dirpath, name)
+                if os.path.islink(fp) or not path_is_within(root, fp):
+                    continue
                 try:
                     with open(fp, "r", encoding="utf-8", errors="ignore") as fh:
                         for i, line in enumerate(fh, 1):

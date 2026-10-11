@@ -71,6 +71,10 @@ class Settings(BaseSettings):
     sandbox_pids_limit: int = 256
     sandbox_timeout: int = 120  # seconds for the test phase
     workspace_dir: str = "./.workspaces"
+    # In hosted multi-user mode (DATABASE_URL set) the "local" backend is refused,
+    # because it would run strangers' repo tests with no isolation next to this
+    # server's secrets. Set ALLOW_UNSANDBOXED_LOCAL=true only if every user is trusted.
+    allow_unsandboxed_local: bool = False
 
     # --- Repair loop ---
     repair_max_iters: int = 3  # patch attempts before giving up

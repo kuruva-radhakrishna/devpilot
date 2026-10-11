@@ -653,10 +653,21 @@ Next, in priority order:
 
 ## Safety notes
 
-- File tools are sandboxed to the repo directory (`_safe_path`) — no path escape.
+- File tools are confined to the repo directory (`_safe_path`, resolved with
+  `realpath`, so symlinks and junctions can't escape). Ingestion skips symlinked
+  files and anything resolving outside the repo.
 - Patch application validates line ranges and refuses paths that escape the
-  workspace; the LLM never writes to disk directly.
+  workspace; the LLM never writes to disk directly. Patches may not modify test
+  files (so a repair can't "pass" by editing the tests).
 - Test execution defaults to Docker isolation (`SANDBOX_BACKEND=docker`). The
   `local` backend runs repo code on the host with **no isolation** — use it only
-  for repos you trust, and it prints a loud warning every run.
+  for repos you trust, and it prints a loud warning every run. In hosted
+  multi-user mode (`DATABASE_URL` set) `local` is refused outright unless
+  `ALLOW_UNSANDBOXED_LOCAL=true`. A disabled/blocked sandbox reports tests as
+  *not executed*, never as passing.
+- `/api/traces` and `/api/review` require login; traces are visible only to the
+  user who triggered them.
+- Not implemented: rate limiting, and the Docker sandbox image only supports
+  Python/pytest (JS repos need a Node image).
+- Regression tests for all of the above: `cd backend && python -m pytest tests -q`.
 - Your API key stays in `.env` (gitignored). Don't commit it.

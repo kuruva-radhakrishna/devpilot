@@ -36,6 +36,7 @@ from app.patch.patcher import (
     FilePatch, Workspace, apply_patch, create_workspace, destroy_workspace,
     git_diff, parse_patch,
 )
+from app.rag.chunker import path_is_within
 from app.rag.retriever import retrieve
 from app.sandbox.tests import TestReport, run_tests_in_workspace
 
@@ -71,7 +72,7 @@ class RepairResult:
 
 def _read_numbered(workspace: Workspace, rel_path: str) -> str | None:
     abs_path = os.path.join(workspace.path, rel_path)
-    if not os.path.isfile(abs_path):
+    if not os.path.isfile(abs_path) or not path_is_within(workspace.path, abs_path):
         return None
     with open(abs_path, "r", encoding="utf-8", errors="ignore") as fh:
         lines = fh.readlines()
@@ -133,6 +134,15 @@ def run_repair(
                 report: TestReport = run_tests_in_workspace(ws.path, test_path)
                 tracing.add_attrs(summary=report.summary(), passed=report.ok)
             tests_before = report.summary()
+            if report.skipped:
+                # No test run happened, so nothing could validate a patch. Stop now
+                # rather than spend LLM calls on a fix that can never be verified.
+                return RepairResult(
+                    success=False, root_cause="", explanation="",
+                    files_changed=[], diff="", test_output=report.raw_output,
+                    note="tests_not_executed", trace_id=trace_id,
+                    tests_before=tests_before, tests_after=tests_before,
+                )
             if report.ok:
                 return RepairResult(
                     success=True, root_cause="No failing tests to repair.",

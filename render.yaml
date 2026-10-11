@@ -22,8 +22,8 @@ services:
         value: gemini
       - key: GEMINI_MODEL
         value: gemini-3.5-flash-lite
-      - key: SANDBOX_BACKEND
-        value: local
+      - key: SANDBOX_BACKEND       # no Docker daemon on Render. With DATABASE_URL set the
+        value: local               # app REFUSES to run repo tests under "local" (see DEPLOY.md)
       - key: VECTOR_BACKEND
         value: pgvector
       - key: TRACE_ENABLED

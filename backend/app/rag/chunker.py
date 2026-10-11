@@ -63,8 +63,22 @@ class Chunk:
         return f"{self.repo_id}:{self.path}:{self.start_line}-{self.end_line}"
 
 
+def path_is_within(root: str, path: str) -> bool:
+    """True if `path`, after resolving symlinks, lives under `root` (also resolved).
+    abspath/commonpath alone is not enough: a symlink inside a repo can point
+    anywhere on the host, and only realpath sees where it really lands."""
+    root_r = os.path.realpath(root)
+    path_r = os.path.realpath(path)
+    try:
+        return os.path.commonpath([root_r, path_r]) == root_r
+    except ValueError:  # e.g. different drives on Windows
+        return False
+
+
 def iter_source_files(root: str):
-    """Yield (abs_path, rel_path, language) for every indexable file under root."""
+    """Yield (abs_path, rel_path, language) for every indexable file under root.
+    Symlinked files and anything resolving outside root are skipped, so a hostile
+    repo can't get host files (e.g. a `x.py` -> /etc/passwd link) indexed."""
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in IGNORE_DIRS]
         for name in filenames:
@@ -73,6 +87,8 @@ def iter_source_files(root: str):
             if not lang:
                 continue
             abs_path = os.path.join(dirpath, name)
+            if os.path.islink(abs_path) or not path_is_within(root, abs_path):
+                continue
             try:
                 if os.path.getsize(abs_path) > MAX_FILE_BYTES:
                     continue

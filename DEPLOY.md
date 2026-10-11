@@ -5,11 +5,16 @@ long-running requests + a writable filesystem) on **Render**, and the static
 React UI on **Vercel**. Deploy the backend first so you have its URL for the
 frontend.
 
-> Honest limits of a live deploy: on a PaaS there's no Docker daemon, so the
-> sandbox runs in `local` mode — repo tests execute **unsandboxed** in the
-> backend container. Only run it against the trusted bundled samples, never
-> arbitrary public input. Repairs take minutes, and the free Gemini tier allows
-> ~20 generate calls/day, so treat this as a demo, not a public service.
+> Honest limits of a live deploy: on a PaaS there's no Docker daemon, so there is
+> no real sandbox. Running a repo's tests would mean executing untrusted code
+> inside the backend container, next to `DATABASE_URL`, `JWT_SECRET` and the
+> Gemini key — so **when `DATABASE_URL` is set (hosted, multi-user mode) the
+> `local` backend is refused**: `/api/agent/debug` returns 403 and the Q&A
+> agent's `run_tests` tool reports that tests were not executed. Ingest and
+> Q&A still work. To run the repair loop, use DevPilot locally with
+> `SANDBOX_BACKEND=docker`. (`ALLOW_UNSANDBOXED_LOCAL=true` overrides the block —
+> only if every user is trusted.) The free Gemini tier also allows ~20 generate
+> calls/day, so treat the live site as a demo, not a public service.
 
 ## 0. A Postgres database (for login, repos, and chat history)
 

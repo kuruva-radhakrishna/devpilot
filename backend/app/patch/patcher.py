@@ -24,7 +24,7 @@ import uuid
 from dataclasses import dataclass, field
 
 from app.config import get_settings
-from app.rag.chunker import IGNORE_DIRS
+from app.rag.chunker import IGNORE_DIRS, path_is_within
 
 
 # --------------------------------------------------------------------------- #
@@ -46,7 +46,9 @@ def create_workspace(repo_dir: str, repo_id: str) -> Workspace:
     def _ignore(_dir, names):
         return [n for n in names if n in IGNORE_DIRS]
 
-    shutil.copytree(repo_dir, dest, ignore=_ignore)
+    # symlinks=True keeps links as links instead of copying whatever they point at
+    # (which could pull host files into the workspace).
+    shutil.copytree(repo_dir, dest, ignore=_ignore, symlinks=True)
     _git_baseline(dest)
     return Workspace(workspace_id=ws_id, path=dest)
 
@@ -175,10 +177,26 @@ def _resolve_file(root: str, rel: str) -> str | None:
 
 
 def _safe_join(root: str, rel: str) -> str:
-    target = os.path.abspath(os.path.join(root, rel))
-    if os.path.commonpath([os.path.abspath(root), target]) != os.path.abspath(root):
+    target = os.path.realpath(os.path.join(root, rel))
+    if not path_is_within(root, target):
         raise ValueError(f"Patch path escapes workspace: {rel}")
     return target
+
+
+_TEST_DIRS = {"test", "tests", "__tests__"}
+
+
+def _is_test_path(rel: str) -> bool:
+    """True for files that define the tests themselves. A repair that edits these
+    can make a suite 'pass' without fixing anything, so patches may not touch them."""
+    parts = rel.replace("\\", "/").lower().split("/")
+    name = parts[-1]
+    return (
+        any(p in _TEST_DIRS for p in parts[:-1])
+        or name == "conftest.py"
+        or name.startswith("test_")
+        or name.endswith(("_test.py", ".test.js", ".test.ts", ".spec.js", ".spec.ts"))
+    )
 
 
 def _replace_function(lines: list[str], func_name: str, new_source: str):
@@ -228,6 +246,12 @@ def apply_patch(ws: Workspace, patches: list[FilePatch]) -> PatchResult:
                 return PatchResult(
                     False,
                     error=f"File not found in workspace (or ambiguous): {fp.file}",
+                )
+            if _is_test_path(resolved):
+                return PatchResult(
+                    False, files_changed=changed,
+                    error=f"Patches may not modify test files ({resolved}); "
+                          "fix the source code under test instead.",
                 )
             abs_path = _safe_join(ws.path, resolved)
             with open(abs_path, "r", encoding="utf-8", errors="ignore") as fh:

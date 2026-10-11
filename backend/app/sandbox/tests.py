@@ -22,12 +22,15 @@ class TestReport:
     timed_out: bool
     raw_output: str
     command: list[str]
+    skipped: bool = False  # tests never ran (sandbox disabled/blocked)
 
     @property
     def ok(self) -> bool:
-        return self.returncode == 0 and not self.timed_out
+        return self.returncode == 0 and not self.timed_out and not self.skipped
 
     def summary(self) -> str:
+        if self.skipped:
+            return "tests not executed (sandbox disabled or blocked)"
         if self.timed_out:
             return "tests timed out"
         return f"{self.passed} passed, {self.failed} failed, {self.errors} errors"
@@ -75,10 +78,11 @@ def run_tests_in_workspace(workspace_dir: str, test_path: str = "") -> TestRepor
     output = result.combined(limit=8000)
     passed, failed, errors = _parse_pytest(output)
     # If parsing found nothing but the run failed, surface it as an error.
-    if passed == failed == errors == 0 and not result.ok and not result.timed_out:
+    if (passed == failed == errors == 0 and not result.ok
+            and not result.timed_out and not result.skipped):
         errors = 1
     return TestReport(
         passed=passed, failed=failed, errors=errors,
         returncode=result.returncode, timed_out=result.timed_out,
-        raw_output=output, command=cmd,
+        raw_output=output, command=cmd, skipped=result.skipped,
     )

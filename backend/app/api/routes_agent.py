@@ -13,7 +13,9 @@ from app.auth.deps import get_current_user
 from app.config import get_settings
 from app.db import store as pstore
 from app.llm.keyctx import reset_request_key, set_request_key
+from app.obs.store import tag_owner as tag_trace_owner
 from app.rag.ingest import prepare_repo_dir
+from app.sandbox.runner import LOCAL_BLOCKED_MESSAGE, local_execution_blocked
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 
@@ -82,6 +84,8 @@ def ask(req: AskRequest, x_gemini_key: str | None = Header(default=None), user: 
             raise HTTPException(status_code=400, detail=str(exc))
     finally:
         reset_request_key(token)
+    if _persistent(user):
+        tag_trace_owner(result.trace_id, user["id"])
     tool_names = [tc.name for tc in result.tool_calls]
     _save("assistant", result.answer, tool_names)
     return {
@@ -98,6 +102,8 @@ def ask(req: AskRequest, x_gemini_key: str | None = Header(default=None), user: 
 @router.post("/debug")
 def debug(req: DebugRequest, x_gemini_key: str | None = Header(default=None), user: dict = Depends(get_current_user)):
     """Autonomous repair loop: search -> patch -> run tests in sandbox -> retry."""
+    if local_execution_blocked():
+        raise HTTPException(403, LOCAL_BLOCKED_MESSAGE)
     meta = _resolve_repo(user, req.repo_id)
     if not meta:
         raise HTTPException(404, f"Unknown repo_id '{req.repo_id}'. Ingest it first.")
@@ -122,6 +128,8 @@ def debug(req: DebugRequest, x_gemini_key: str | None = Header(default=None), us
             raise HTTPException(status_code=400, detail=str(exc))
     finally:
         reset_request_key(token)
+    if _persistent(user):
+        tag_trace_owner(result.trace_id, user["id"])
     _save("assistant", result.explanation or result.root_cause or "(no explanation)")
     return {
         "success": result.success,

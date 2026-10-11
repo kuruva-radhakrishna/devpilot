@@ -26,6 +26,24 @@ from dataclasses import dataclass
 from app.config import get_settings
 
 
+LOCAL_BLOCKED_MESSAGE = (
+    "Test execution is blocked on this hosted deployment: the 'local' sandbox would "
+    "run untrusted repository code with no isolation, next to the server's secrets. "
+    "Run DevPilot yourself with SANDBOX_BACKEND=docker to use the repair loop."
+)
+
+
+def local_execution_blocked() -> bool:
+    """True when the unisolated 'local' backend is configured on a hosted,
+    multi-user deployment (DATABASE_URL set) without an explicit opt-in."""
+    s = get_settings()
+    return (
+        s.sandbox_backend.lower() == "local"
+        and s.auth_available
+        and not s.allow_unsandboxed_local
+    )
+
+
 @dataclass
 class SandboxResult:
     returncode: int
@@ -33,10 +51,13 @@ class SandboxResult:
     stderr: str
     timed_out: bool
     backend: str
+    # True when no tests actually ran (sandbox disabled/blocked). A skipped run is
+    # never "ok" — it must not be mistaken for a passing test suite.
+    skipped: bool = False
 
     @property
     def ok(self) -> bool:
-        return self.returncode == 0 and not self.timed_out
+        return self.returncode == 0 and not self.timed_out and not self.skipped
 
     def combined(self, limit: int = 6000) -> str:
         out = (self.stdout or "") + ("\n" + self.stderr if self.stderr else "")
@@ -83,11 +104,16 @@ def run_in_sandbox(
 
     if backend == "disabled":
         return SandboxResult(
-            returncode=0,
+            returncode=1,
             stdout="[sandbox disabled] set SANDBOX_BACKEND=docker (or local) to run tests.",
-            stderr="", timed_out=False, backend="disabled",
+            stderr="", timed_out=False, backend="disabled", skipped=True,
         )
     if backend == "local":
+        if local_execution_blocked():
+            return SandboxResult(
+                returncode=1, stdout=LOCAL_BLOCKED_MESSAGE, stderr="",
+                timed_out=False, backend="blocked", skipped=True,
+            )
         return _run_local(workspace_dir, command, timeout)
     return _run_docker(workspace_dir, command, timeout, allow_network)
 
