@@ -11,7 +11,7 @@ import ThemeSwitch from "./ThemeSwitch";
 const FEATURES = [
   { Icon: IconSearch, title: "Code-aware RAG", body: "Indexes your repo with hybrid semantic + keyword search." },
   { Icon: IconChat, title: "Grounded Q&A", body: "Reads real files and shows exactly which tools it used." },
-  { Icon: IconCheck, title: "Verified repair", body: "Patches bugs and re-runs the tests to prove the fix (run locally)." },
+  { Icon: IconCheck, title: "Verified repair", body: "Patches a bug, then re-runs the tests in an isolated runner to prove the fix." },
   { Icon: IconBars, title: "Evaluated, not vibes", body: "97% repair success, measured on a 36-case benchmark." },
   { Icon: IconNetwork, title: "Provider-agnostic", body: "Runs on Gemini or a local Ollama model." },
   { Icon: IconKey, title: "Bring your own key", body: "Use your own free Gemini key. The demo quota never runs out." },

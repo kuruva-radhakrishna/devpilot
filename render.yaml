@@ -27,9 +27,34 @@ services:
         value: gemini
       - key: GEMINI_MODEL
         value: gemini-3.5-flash-lite
-      - key: SANDBOX_BACKEND       # no Docker daemon on Render. With DATABASE_URL set the
-        value: local               # app REFUSES to run repo tests under "local" (see DEPLOY.md)
+      - key: SANDBOX_BACKEND       # no Docker daemon on Render, so repo tests run on the
+        value: remote              # separate, secret-free devpilot-runner service below
+      - key: SANDBOX_TOKEN         # the runner's token, shared automatically
+        fromService:
+          type: web
+          name: devpilot-runner
+          envVarKey: RUNNER_TOKEN
+      # SANDBOX_URL (the runner's public https address) is set in the dashboard once the
+      # runner is up. It is deliberately not guessed here: the token and every uploaded
+      # workspace go to that address, so it must be one you've confirmed is yours.
       - key: VECTOR_BACKEND
         value: pgvector
       - key: TRACE_ENABLED
         value: "true"
+
+  # The isolated test runner. It holds NO secrets (only its own token), runs each test
+  # suite as an unprivileged per-slot user with resource limits, and refuses to run
+  # anything if it can't isolate. See runner/ and DEPLOY.md.
+  - type: web
+    name: devpilot-runner
+    runtime: docker
+    dockerContext: ./runner
+    dockerfilePath: ./runner/Dockerfile
+    plan: free
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: RUNNER_TOKEN
+        generateValue: true
+      - key: RUNNER_SLOTS
+        value: "2"

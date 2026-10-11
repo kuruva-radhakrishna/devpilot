@@ -10,16 +10,20 @@ import {
   getHealth,
   getMe,
   getMessages,
+  getRepairJob,
   getToken,
   ingestRepo,
   listRepos,
+  startRepair,
   type Health,
+  type RepairEvent,
   type RepoMeta,
 } from "./api";
 import AccountModal from "./components/AccountModal";
 import ApiKeyPanel from "./components/ApiKeyPanel";
 import AuthScreen from "./components/AuthScreen";
 import HelpModal from "./components/HelpModal";
+import RepairProgress from "./components/RepairProgress";
 import ThemeSwitch from "./components/ThemeSwitch";
 import {
   BrandMark,
@@ -38,9 +42,13 @@ import {
   IconSearch,
   IconSend,
   IconTrash,
+  IconWrench,
   IconXSmall,
 } from "./icons";
 import { describeError, initials } from "./lib";
+import { SAMPLE_BUGS, type SampleBug } from "./samples";
+
+const JOB_KEY = "devpilot_repair_job";
 
 const EXAMPLES = [
   "Give me a high-level overview of this codebase.",
@@ -65,19 +73,34 @@ function textOf(node: ReactNode): string {
 
 function CodeBlock({ children }: { children?: ReactNode }) {
   const [copied, setCopied] = useState(false);
+  const text = textOf(children).replace(/\n$/, "");
+  // react-markdown renders ```diff as <pre><code class="language-diff">.
+  const className = isValidElement(children) ? (children.props as { className?: string }).className ?? "" : "";
+  const isDiff = /\blanguage-diff\b/.test(className);
   async function copy() {
     try {
-      await navigator.clipboard.writeText(textOf(children).replace(/\n$/, ""));
+      await navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch { /* clipboard can be blocked */ }
   }
   return (
     <div className="codeblock">
-      <button type="button" className="code-copy" onClick={copy} title="Copy code">
+      <button type="button" className="code-copy" onClick={copy} title={isDiff ? "Copy patch" : "Copy code"}>
         {copied ? <><IconCheckSmall width={13} height={13} /> Copied</> : <><IconCopy width={13} height={13} /> Copy</>}
       </button>
-      <pre>{children}</pre>
+      {isDiff ? (
+        <pre className="diff">
+          {text.split("\n").map((line, i) => (
+            <span key={i} className={
+              line.startsWith("+++") || line.startsWith("---") ? "dl file" :
+              line.startsWith("@@") ? "dl hunk" :
+              line.startsWith("+") ? "dl add" :
+              line.startsWith("-") ? "dl del" : "dl"
+            }>{line || " "}</span>
+          ))}
+        </pre>
+      ) : <pre>{children}</pre>}
     </div>
   );
 }
@@ -88,11 +111,17 @@ interface ChatMessage {
   toolNames?: string[];
 }
 
+const REPAIR_PREFIX = "[repair] ";
+
 function ChatBubble({ msg }: { msg: ChatMessage }) {
   if (msg.role === "user") {
+    const isFix = msg.content.startsWith(REPAIR_PREFIX);
     return (
       <div className="msg user">
-        <div className="bubble user">{msg.content}</div>
+        <div className="bubble user">
+          {isFix && <span className="bubble-tag"><IconWrench width={12} height={12} /> Fix a bug</span>}
+          {isFix ? msg.content.slice(REPAIR_PREFIX.length) : msg.content}
+        </div>
       </div>
     );
   }
@@ -127,11 +156,14 @@ function TypingBubble() {
   );
 }
 
-function EmptyState({ source, setSource, ingestBusy, onIngest }: {
+function EmptyState({ source, setSource, ingestBusy, onIngest, repairEnabled, repairBusy, onTrySample }: {
   source: string;
   setSource: (v: string) => void;
   ingestBusy: boolean;
   onIngest: () => void;
+  repairEnabled: boolean;
+  repairBusy: boolean;
+  onTrySample: (s: SampleBug) => void;
 }) {
   return (
     <div className="empty-state">
@@ -140,8 +172,28 @@ function EmptyState({ source, setSource, ingestBusy, onIngest }: {
         <h1 className="hero-title">Ask your codebase anything</h1>
         <p className="hero-sub">
           Add a GitHub repo and DevPilot indexes it, then answers questions with the files it
-          actually read, so you can trust where each answer came from.
+          actually read{repairEnabled ? ", or fixes a bug and proves the fix by running the tests" : ""}.
         </p>
+
+        {repairEnabled && (
+          <>
+            <h2 className="eyebrow first">Watch it fix a real bug</h2>
+            <div className="examples">
+              {SAMPLE_BUGS.map((s) => (
+                <button type="button" className="ex" key={s.source} disabled={ingestBusy || repairBusy}
+                  onClick={() => onTrySample(s)}>
+                  <span>
+                    <span className="ex-title">{s.title}</span>
+                    <span className="ex-note">{s.note}</span>
+                  </span>
+                  <IconWrench className="ex-arrow" width={16} height={16} />
+                </button>
+              ))}
+            </div>
+            <div className="hint">One click: it indexes the sample, reproduces the failing test, patches it, and re-runs the tests.</div>
+            <h2 className="eyebrow">Or bring your own repo</h2>
+          </>
+        )}
 
         <form className="hero-ingest" onSubmit={(e) => { e.preventDefault(); if (source.trim()) onIngest(); }}>
           <input
@@ -156,7 +208,7 @@ function EmptyState({ source, setSource, ingestBusy, onIngest }: {
         </form>
         <div className="hint">Indexing takes a minute or two for a mid-size repo.</div>
 
-        <h2 className="eyebrow">Or try one of these</h2>
+        <h2 className="eyebrow">Some repos to try</h2>
         <div className="examples">
           {SAMPLE_REPOS.map((r) => (
             <button type="button" className="ex" key={r.url} onClick={() => setSource(r.url)}>
@@ -225,6 +277,15 @@ export default function App() {
   const [renamingId, setRenamingId] = useState("");
   const [renameDraft, setRenameDraft] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // "Fix a bug" mode: a repair runs as a background job on the server; we poll it.
+  const [mode, setMode] = useState<"ask" | "fix">("ask");
+  const [testPath, setTestPath] = useState("");
+  const [job, setJob] = useState<{ repoId: string; id: string; events: RepairEvent[]; elapsed: number } | null>(() => {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(JOB_KEY) ?? "null");
+      return saved?.id && saved?.repoId ? { repoId: saved.repoId, id: saved.id, events: [], elapsed: 0 } : null;
+    } catch { return null; }
+  });
   const feedRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
 
@@ -259,7 +320,51 @@ export default function App() {
   useEffect(() => {
     const el = feedRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages.length, askBusy]);
+  }, [messages.length, askBusy, job?.events.length]);
+
+  // Follow a running repair until it finishes, then drop its result into the chat.
+  // (The server also saves it to the history, so a reload shows the same thing.)
+  const jobId = job?.id;
+  useEffect(() => {
+    if (!job) return;
+    const { id, repoId: jobRepo } = job;
+    let finished = false;
+    async function tick() {
+      try {
+        const snap = await getRepairJob(id);
+        if (finished) return;
+        if (snap.status === "running") {
+          setJob((j) => (j && j.id === id ? { ...j, events: snap.events, elapsed: snap.elapsed } : j));
+          return;
+        }
+        finished = true;
+        const outcome: ChatMessage = snap.status === "done" && snap.result
+          ? { role: "assistant", content: snap.result.markdown, toolNames: ["repair"] }
+          : { role: "error", content: snap.error ?? "The repair failed." };
+        // After a reload the saved history may already end with this very result.
+        setChats((c) => {
+          const list = c[jobRepo] ?? [];
+          return list.length && list[list.length - 1].content === outcome.content
+            ? c : { ...c, [jobRepo]: [...list, outcome] };
+        });
+        setJob(null);
+        try { sessionStorage.removeItem(JOB_KEY); } catch { /* ignore */ }
+      } catch (e) {
+        if (e instanceof AuthError) { finished = true; setAuthed(false); return; }
+        // The job is gone (expired, or the server restarted): stop following it.
+        if (/no such repair job/i.test((e as Error).message)) {
+          finished = true;
+          setJob(null);
+          try { sessionStorage.removeItem(JOB_KEY); } catch { /* ignore */ }
+        }
+        // anything else is a hiccup; the next tick retries
+      }
+    }
+    tick();
+    const timer = setInterval(tick, 1500);
+    return () => { finished = true; clearInterval(timer); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobId]);
 
   // Grow the composer with its content, up to a cap.
   useEffect(() => {
@@ -281,6 +386,8 @@ export default function App() {
 
   const authRequired = health?.auth_enabled ?? false;
   const showApp = !authRequired || authed;
+  const repairEnabled = health?.repair_enabled ?? false;
+  useEffect(() => { if (health && !repairEnabled && mode === "fix") setMode("ask"); }, [health, repairEnabled, mode]);
 
   // Who is signed in (also proves the stored session is still valid — a password
   // change on another device or a deleted account answers 401 here).
@@ -320,6 +427,8 @@ export default function App() {
     setRepoId("");
     setEmail(""); setName("");
     setShowAccount(false);
+    setJob(null); setMode("ask"); setTestPath("");
+    try { sessionStorage.removeItem(JOB_KEY); } catch { /* ignore */ }
     fetchedHistoryFor.current.clear();
   }
 
@@ -370,7 +479,37 @@ export default function App() {
     }
   }
 
+  async function onStartFix(rId = repoId, bug = draft.trim(), path = testPath.trim()) {
+    if (!rId || bug.length < 8 || job) return;
+    setError("");
+    appendMessage(rId, { role: "user", content: `${REPAIR_PREFIX}${bug}` });
+    setDraft("");
+    try {
+      const started = await startRepair(rId, bug, path);
+      try { sessionStorage.setItem(JOB_KEY, JSON.stringify({ repoId: rId, id: started.job_id })); } catch { /* ignore */ }
+      setJob({ repoId: rId, id: started.job_id, events: [], elapsed: 0 });
+    } catch (e) {
+      if (e instanceof AuthError) setAuthed(false);
+      appendMessage(rId, { role: "error", content: describeError(e) });
+    }
+  }
+
+  async function onTrySample(s: SampleBug) {
+    setError(""); setIngestBusy(true);
+    try {
+      const meta = await ingestRepo(s.source);
+      await refresh();
+      setRepoId(meta.repo_id);
+      setMode("fix");
+      setTestPath(s.testPath);
+      setSidebarOpen(false);
+      await onStartFix(meta.repo_id, s.bug, s.testPath);
+    } catch (e) { handleRequestError(e); }
+    finally { setIngestBusy(false); }
+  }
+
   async function onSend() {
+    if (mode === "fix") { await onStartFix(); return; }
     const q = draft.trim();
     if (!repoId || !q || askBusy) return;
     const id = repoId;
@@ -583,7 +722,10 @@ export default function App() {
           )}
 
           {!repoId ? (
-            <EmptyState source={source} setSource={setSource} ingestBusy={ingestBusy} onIngest={onIngest} />
+            <EmptyState
+              source={source} setSource={setSource} ingestBusy={ingestBusy} onIngest={onIngest}
+              repairEnabled={repairEnabled} repairBusy={!!job} onTrySample={onTrySample}
+            />
           ) : (
             <div className="main-chat">
               <div className="chat-header">
@@ -599,44 +741,93 @@ export default function App() {
                   {messages.length === 0 ? (
                     <div className="chat-empty">
                       <span className="hero-mark small"><IconBot width={26} height={26} /></span>
-                      <h2 className="chat-empty-title">Ask anything about this repo</h2>
-                      <p>Answers cite the files DevPilot read. Try one of these:</p>
-                      <div className="examples">
-                        {EXAMPLES.map((ex) => (
-                          <button type="button" className="ex" key={ex}
-                            onClick={() => { setDraft(ex); composerRef.current?.focus(); }}>
-                            <span className="ex-title">{ex}</span>
-                            <IconArrowRight className="ex-arrow" width={16} height={16} />
-                          </button>
-                        ))}
-                      </div>
+                      {mode === "fix" ? (
+                        <>
+                          <h2 className="chat-empty-title">Describe a bug to fix</h2>
+                          <p>
+                            DevPilot reproduces it by running the tests, finds the code, patches it, and
+                            re-runs the tests to prove the fix.
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <h2 className="chat-empty-title">Ask anything about this repo</h2>
+                          <p>Answers cite the files DevPilot read. Try one of these:</p>
+                          <div className="examples">
+                            {EXAMPLES.map((ex) => (
+                              <button type="button" className="ex" key={ex}
+                                onClick={() => { setDraft(ex); composerRef.current?.focus(); }}>
+                                <span className="ex-title">{ex}</span>
+                                <IconArrowRight className="ex-arrow" width={16} height={16} />
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
                     </div>
                   ) : (
                     messages.map((m, i) => <ChatBubble key={i} msg={m} />)
                   )}
+                  {job && job.repoId === repoId && <RepairProgress events={job.events} elapsed={job.elapsed} running />}
                   {askBusy && <TypingBubble />}
                 </div>
               </div>
 
               <form className="composer" onSubmit={(e) => { e.preventDefault(); onSend(); }}>
                 <div className="wrap">
+                  <div className="mode-switch" role="tablist" aria-label="What do you want to do?">
+                    <button type="button" role="tab" aria-selected={mode === "ask"}
+                      className={mode === "ask" ? "mode active" : "mode"} onClick={() => setMode("ask")}>
+                      <IconChat width={15} height={15} /> Ask
+                    </button>
+                    <button type="button" role="tab" aria-selected={mode === "fix"}
+                      className={mode === "fix" ? "mode active" : "mode"}
+                      disabled={!repairEnabled}
+                      title={repairEnabled ? "Describe a bug and have DevPilot fix it" : (health?.repair_reason || "Repair isn't available here")}
+                      onClick={() => setMode("fix")}>
+                      <IconWrench width={15} height={15} /> Fix a bug
+                    </button>
+                  </div>
                   <div className="composer-box">
                     <textarea
                       ref={composerRef}
                       rows={1}
-                      aria-label="Your question"
-                      placeholder="Ask about this codebase…"
+                      aria-label={mode === "fix" ? "Describe the bug" : "Your question"}
+                      placeholder={
+                        job ? "A repair is running…" :
+                        mode === "fix" ? "Describe the bug, e.g. “withdrawals can go negative”" :
+                        "Ask about this codebase…"}
                       value={draft}
+                      disabled={!!job}
                       onChange={(e) => setDraft(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); }
                       }}
                     />
-                    <button type="submit" className="send" disabled={askBusy || !draft.trim()} title="Send" aria-label="Send">
-                      <IconSend width={18} height={18} />
-                    </button>
+                    {mode === "fix" ? (
+                      <button type="submit" className="btn-primary fix-go" disabled={!!job || draft.trim().length < 8}>
+                        <IconWrench width={16} height={16} /> Fix it
+                      </button>
+                    ) : (
+                      <button type="submit" className="send" disabled={askBusy || !draft.trim()} title="Send" aria-label="Send">
+                        <IconSend width={18} height={18} />
+                      </button>
+                    )}
                   </div>
-                  <div className="hint">Enter to send · Shift+Enter for a new line</div>
+                  {mode === "fix" ? (
+                    <details className="fix-options">
+                      <summary>Options and notes{testPath ? ` · ${testPath}` : ""}</summary>
+                      <label htmlFor="fix-test-path">Test file <span>(optional, narrows the run)</span></label>
+                      <input id="fix-test-path" value={testPath} placeholder="tests/test_orders.py"
+                        onChange={(e) => setTestPath(e.target.value)} disabled={!!job} />
+                      <div className="hint left">
+                        Each attempt uses 1–3 model calls{hasKey ? "." : ", so add your own Gemini key (API key in the sidebar) rather than spend the shared demo quota."}
+                        {" "}The first repair after a quiet period can take a minute while the test runner wakes up.
+                      </div>
+                    </details>
+                  ) : (
+                    <div className="hint">Enter to send · Shift+Enter for a new line</div>
+                  )}
                 </div>
               </form>
             </div>

@@ -66,6 +66,11 @@ export interface Health {
   gemini_key_set: boolean;
   /** True when the server can send password-reset emails. */
   email_enabled?: boolean;
+  /** Whether the "Fix a bug" mode can run here, which runner executes the tests
+   * ("remote" | "docker" | "local"), and — when it can't — why. */
+  repair_enabled?: boolean;
+  repair_runner?: string;
+  repair_reason?: string;
 }
 
 /** Thrown on a 401 so the UI can drop the session and show the login screen. */
@@ -165,6 +170,49 @@ export const listRepos = async (): Promise<Record<string, RepoMeta>> => {
 
 export const ask = (repo_id: string, question: string) =>
   post<AskResponse>("/api/agent/ask", { repo_id, question });
+
+// --- Repair ("Fix a bug") ---------------------------------------------------
+export interface RepairEvent {
+  /** Seconds since the job started. */
+  t: number;
+  stage: string;
+  message?: string;
+  n?: number;
+  total?: number;
+  passed?: boolean;
+  files?: string[];
+}
+
+export interface RepairResult {
+  success: boolean;
+  root_cause: string;
+  explanation: string;
+  files_changed: string[];
+  diff: string;
+  note: string | null;
+  tests_before: string;
+  tests_after: string;
+  /** Self-contained write-up (with the diff). Also what the chat history stores. */
+  markdown: string;
+}
+
+export interface RepairJob {
+  job_id: string;
+  status: "running" | "done" | "error";
+  events: RepairEvent[];
+  result: RepairResult | null;
+  error: string | null;
+  elapsed: number;
+}
+
+/** Starts a repair in the background; poll getRepairJob for progress and the result. */
+export const startRepair = (repo_id: string, bug_report: string, test_path: string) =>
+  post<{ job_id: string; status: string }>("/api/agent/debug", { repo_id, bug_report, test_path });
+
+export const getRepairJob = async (job_id: string): Promise<RepairJob> => {
+  const res = await fetch(BASE + `/api/agent/debug/${encodeURIComponent(job_id)}`, { headers: headers(false) });
+  return handle<RepairJob>(res);
+};
 
 export interface StoredMessage {
   role: "user" | "assistant" | "error";

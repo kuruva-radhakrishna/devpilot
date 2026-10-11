@@ -293,14 +293,27 @@ docker build -t devpilot-sandbox:latest backend/app/sandbox
 ```
 
 `SANDBOX_BACKEND` selects the executor:
-`docker` (default, isolated) · `local` (host subprocess — **dev only, not
-isolated**, for when Docker isn't installed) · `disabled` (stub).
+`docker` (default, isolated) · `remote` (an isolated, secret-free
+[runner service](runner) — how the hosted demo does it, since a PaaS has no Docker
+daemon) · `local` (host subprocess — **dev only, not isolated**, for when Docker isn't
+installed) · `disabled` (stub).
+
+The runner (`runner/`) runs only `python -m pytest` on an uploaded workspace, as an
+unprivileged per-slot user with resource limits, and refuses to run if it can't isolate.
+Its isolation is attacked for real in CI (privilege escape, fork/memory/disk bombs,
+stray daemons, malicious archives) against the built container.
 
 ### API
 
 ```bash
-POST /api/agent/debug   { "repo_id": "...", "bug_report": "...", "test_path": "" }
+POST /api/agent/debug        { "repo_id": "...", "bug_report": "...", "test_path": "" }
+                             -> 202 { "job_id": "..." }      # starts a background job
+GET  /api/agent/debug/{id}   -> { status, events[], result? }  # live progress + the result
 ```
+
+Repairs are background jobs because one can outlive a free host's request limit. The
+web UI's **Fix a bug** mode drives this, and the bundled demo bugs (`examples/`) are
+one click away as `sample:<name>` sources.
 
 ---
 
