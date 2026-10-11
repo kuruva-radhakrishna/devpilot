@@ -40,8 +40,10 @@ jobs:
           set -o pipefail
           python -m pytest tests -q -ra -p no:cacheprovider 2>&1 | tee pytest.log
       # GitHub only shows full logs to signed-in users; annotations are public.
-      - name: Surface failures as annotations
-        if: failure()
+      - name: Publish the test summary as an annotation
+        if: always()
         working-directory: backend
         run: |
-          grep -E "^(FAILED|ERROR) " pytest.log | head -40 | while read -r line; do echo "::error::${line}"; done
+          echo "::notice title=pytest summary::$(tail -n 1 pytest.log)"
+          echo "::notice title=skipped tests::$(grep -E '^SKIPPED' pytest.log | head -5 | tr '\n' ' ' || true)"
+          grep -E "^(FAILED|ERROR) " pytest.log | head -40 | while read -r line; do echo "::error::${line}"; done || true
