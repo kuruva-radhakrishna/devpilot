@@ -25,6 +25,43 @@ jobs:
       - run: npm ci
       - run: npm run build
 
+  runner:
+    # Builds the real runner image and attacks it (privilege escape, fork/memory/disk
+    # bombs, stray daemons, malicious archives). This is the only place its isolation
+    # is exercised, because it needs Linux + root + Docker.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install pytest==8.3.4 httpx==0.28.1
+      - name: Unit tests
+        working-directory: runner
+        run: python -m pytest tests/test_unit.py -q -p no:cacheprovider
+      - name: Build and start the runner container
+        run: |
+          docker build -t devpilot-runner runner
+          docker run -d --name runner -p 10000:10000 \
+            -e RUNNER_TOKEN=ci-only-token-not-a-secret -e RUNNER_MAX_DISK_MB=60 devpilot-runner
+          for i in $(seq 1 30); do curl -fs http://localhost:10000/healthz && break || sleep 1; done
+          curl -s http://localhost:10000/healthz
+      - name: Attack it
+        working-directory: runner
+        env:
+          RUNNER_E2E_URL: http://localhost:10000
+          RUNNER_E2E_TOKEN: ci-only-token-not-a-secret
+        run: |
+          set -o pipefail
+          python -m pytest tests/test_e2e.py -q -ra -p no:cacheprovider 2>&1 | tee e2e.log
+      - name: Publish the summary as an annotation
+        if: always()
+        working-directory: runner
+        run: |
+          echo "::notice title=runner e2e::$(tail -n 1 e2e.log 2>/dev/null)"
+          grep -E "^(FAILED|ERROR) " e2e.log 2>/dev/null | head -30 | while read -r line; do echo "::error::${line}"; done || true
+          docker logs runner 2>&1 | tail -15 | while read -r line; do echo "::warning title=runner log::${line}"; done || true
+
   test:
     runs-on: ubuntu-latest
     services:
