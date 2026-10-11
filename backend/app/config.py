@@ -109,19 +109,22 @@ class Settings(BaseSettings):
     mail_from: str = ""            # a sender address verified with your provider
     mail_from_name: str = "DevPilot"
     # Where reset links point (the deployed frontend). Falls back to the first
-    # allowed CORS origin that isn't a wildcard.
+    # allowed CORS origin that isn't a wildcard. Deliberately NEVER taken from the
+    # request's Origin/Host headers: an attacker could set those and have a victim's
+    # reset link emailed to a site they control (reset-link poisoning).
     frontend_url: str = ""
     password_reset_minutes: int = 30
 
     @property
     def reset_base_url(self) -> str:
+        """Base URL for emailed links, or "" when it can't be determined safely."""
         if self.frontend_url:
             return self.frontend_url.rstrip("/")
         for origin in self.allowed_origins.split(","):
             origin = origin.strip()
             if origin and origin != "*":
                 return origin.rstrip("/")
-        return "http://localhost:5173"
+        return ""
 
     @property
     def pg_dsn(self) -> str:

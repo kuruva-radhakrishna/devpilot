@@ -15,12 +15,15 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
     <script>
       // Set the theme before first paint so there's no flash of the wrong one.
+      // Themes: soft (default), light, dark, auto (follows the OS) — same set as
+      // the other projects. Old saved values "light"/"dark" remain valid.
       (function () {
+        var t = "soft";
         try {
-          var t = localStorage.getItem("devpilot_theme");
-          if (!t) t = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-          document.documentElement.setAttribute("data-theme", t);
+          var saved = localStorage.getItem("devpilot_theme");
+          if (/^(soft|light|dark|auto)$/.test(saved)) t = saved;
         } catch (e) {}
+        document.documentElement.setAttribute("data-theme", t);
       })();
     </script>
   </head>

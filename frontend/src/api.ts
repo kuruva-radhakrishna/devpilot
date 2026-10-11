@@ -64,6 +64,8 @@ export interface Health {
   model: string;
   auth_enabled: boolean;
   gemini_key_set: boolean;
+  /** True when the server can send password-reset emails. */
+  email_enabled?: boolean;
 }
 
 /** Thrown on a 401 so the UI can drop the session and show the login screen. */
@@ -114,6 +116,28 @@ export const register = (email: string, password: string, name: string) =>
 
 export const login = (email: string, password: string) =>
   post<AuthResponse>("/api/auth/login", { email, password });
+
+/** Who the stored session belongs to. Also proves the session is still valid
+ * (a password change elsewhere or a deleted account answers 401). */
+export const getMe = async (): Promise<{ email: string; name: string; anonymous: boolean }> => {
+  const res = await fetch(BASE + "/api/auth/me", { headers: headers(false) });
+  return handle(res);
+};
+
+export const forgotPassword = (email: string) =>
+  post<{ ok: boolean; message: string }>("/api/auth/forgot-password", { email });
+
+/** Redeems an emailed reset token. Signs the user in with the new password. */
+export const resetPassword = (token: string, password: string) =>
+  post<AuthResponse>("/api/auth/reset-password", { token, password });
+
+/** Returns a fresh session token: every other device is signed out by the change. */
+export const changePassword = (current_password: string, new_password: string) =>
+  post<AuthResponse>("/api/auth/change-password", { current_password, new_password });
+
+/** Permanently deletes the account, its repos and its chats. */
+export const deleteAccount = (password: string) =>
+  post<{ deleted: boolean }>("/api/auth/delete-account", { password });
 
 /** Tests a Gemini key with a cheap, no-generation call. Pass an explicit key
  * to test a candidate before saving it — falls back to the saved one. */

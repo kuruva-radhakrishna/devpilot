@@ -8,6 +8,23 @@ on:
   pull_request:
 
 jobs:
+  frontend:
+    # Type-checks and builds the Vite app — the same step Vercel runs, so a TypeScript
+    # error (like the missing vite-env.d.ts once was) fails here, not in production.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build
+
   test:
     runs-on: ubuntu-latest
     services:

@@ -281,6 +281,30 @@ def test_forgot_password_reports_when_email_is_not_configured(env, monkeypatch):
     assert env.client.get("/api/health").json()["email_enabled"] is False
 
 
+def test_reset_email_stays_off_without_a_known_frontend_url(env, monkeypatch):
+    """A wildcard CORS setting must not make us guess where the link should point."""
+    monkeypatch.setenv("FRONTEND_URL", "")
+    monkeypatch.setenv("ALLOWED_ORIGINS", "*")
+    get_settings.cache_clear()
+    assert mailer.enabled() is False
+    assert _forgot(env).status_code == 503
+
+    monkeypatch.setenv("ALLOWED_ORIGINS", "https://app.example.com,*")
+    get_settings.cache_clear()
+    assert mailer.enabled() is True
+    assert get_settings().reset_base_url == "https://app.example.com"
+
+
+def test_reset_link_ignores_a_spoofed_origin_header(env):
+    """Reset-link poisoning: the link's host comes from configuration only."""
+    _register(env)
+    env.client.post("/api/auth/forgot-password", json={"email": "ada@example.com"},
+                    headers={"x-forwarded-for": "1.1.1.1", "origin": "https://evil.example",
+                             "host": "evil.example", "x-forwarded-host": "evil.example"})
+    assert env.sent and "evil" not in env.sent[-1]["text"]
+    assert "https://app.example.com/#reset=" in env.sent[-1]["text"]
+
+
 def _reset(env, token, password="Fresh-and-strong-9"):
     return env.client.post("/api/auth/reset-password", json={"token": token, "password": password})
 

@@ -78,10 +78,70 @@ export const IconSun = (p: IconProps) => (
 );
 
 export const IconMoon = (p: IconProps) => (
-  <svg viewBox="0 0 24 24" width={18} height={18} {...p}>
-    <circle cx="12" cy="12" r="8" fill="currentColor" />
-    <circle cx="16.5" cy="8.5" r="7" fill="var(--bg)" />
-  </svg>
+  <Stroke {...p}><path d="M20 14.2A8.2 8.2 0 0 1 9.8 4 8.2 8.2 0 1 0 20 14.2z" /></Stroke>
+);
+
+/** Half-filled circle: the "soft" (muted) theme. */
+export const IconContrast = (p: IconProps) => (
+  <Stroke {...p}>
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="M12 3.5v17a8.5 8.5 0 0 0 0-17z" fill="currentColor" stroke="none" />
+  </Stroke>
+);
+
+export const IconMonitor = (p: IconProps) => (
+  <Stroke {...p}>
+    <rect x="3" y="4.5" width="18" height="12" rx="2" />
+    <line x1="9" y1="20" x2="15" y2="20" /><line x1="12" y1="16.5" x2="12" y2="20" />
+  </Stroke>
+);
+
+export const IconLock = (p: IconProps) => (
+  <Stroke {...p}>
+    <rect x="5" y="10.5" width="14" height="9.5" rx="2.2" />
+    <path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" />
+  </Stroke>
+);
+
+export const IconMail = (p: IconProps) => (
+  <Stroke {...p}>
+    <rect x="3" y="5.5" width="18" height="13" rx="2.2" />
+    <polyline points="3.5,7.5 12,13.5 20.5,7.5" />
+  </Stroke>
+);
+
+export const IconArrowRight = (p: IconProps) => (
+  <Stroke {...p}><line x1="5" y1="12" x2="19" y2="12" /><polyline points="13,6 19,12 13,18" /></Stroke>
+);
+
+export const IconEye = (p: IconProps) => (
+  <Stroke {...p}>
+    <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" />
+    <circle cx="12" cy="12" r="2.6" />
+  </Stroke>
+);
+
+export const IconEyeOff = (p: IconProps) => (
+  <Stroke {...p}>
+    <path d="M3 3l18 18" />
+    <path d="M10.6 6a9 9 0 0 1 1.4-.5c6 0 9.5 6.5 9.5 6.5a16 16 0 0 1-2.7 3.5M6.6 7.6A16 16 0 0 0 2.5 12S6 18.5 12 18.5a9 9 0 0 0 3.2-.6" />
+    <path d="M9.9 9.9A2.6 2.6 0 0 0 14.1 14.1" />
+  </Stroke>
+);
+
+export const IconCopy = (p: IconProps) => (
+  <Stroke {...p}>
+    <rect x="8.5" y="8.5" width="11" height="11" rx="2" />
+    <path d="M15.5 8.5V6A2 2 0 0 0 13.5 4H6A2 2 0 0 0 4 6v7.5A2 2 0 0 0 6 15.5h2.5" />
+  </Stroke>
+);
+
+export const IconAlert = (p: IconProps) => (
+  <Stroke {...p}>
+    <path d="M12 3.5 21.5 20H2.5z" />
+    <line x1="12" y1="10" x2="12" y2="14.5" />
+    <circle cx="12" cy="17.2" r="0.9" fill="currentColor" stroke="none" />
+  </Stroke>
 );
 
 export const IconSend = (p: IconProps) => (

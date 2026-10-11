@@ -91,6 +91,59 @@ This is why the public demo doesn't die on the free-tier quota: each visitor
 spends *their own* ~20 calls/day, not a single shared budget. Get a free key at
 https://aistudio.google.com/app/apikey.
 
+Both key formats work — the classic `AIza…` and the newer `AQ.…`. The backend uses
+the `google-genai` SDK, which sends the key as an `x-goog-api-key` header; it never
+inspects the key's prefix. Each key gets its own client object, so two visitors'
+keys can never mix, even under concurrent requests.
+
+## Password reset email (optional)
+
+Without this, the app works fine; the login screen just says reset email isn't set
+up. To turn on **Forgot password**, give the backend an HTTPS email provider (Render's
+free tier blocks SMTP ports, so an API is required). Brevo is the easiest because
+it only needs one verified sender address, not a domain:
+
+1. https://brevo.com → sign up (free: 300 emails/day) → **Senders, Domains & Dedicated
+   IPs → Senders → Add a sender** with an address you own, and click the verification
+   link they email you.
+2. **SMTP & API → API Keys → Generate a new API key.**
+3. On Render, set these environment variables, then redeploy:
+   - `BREVO_API_KEY` = the key from step 2
+   - `MAIL_FROM` = the sender address you verified in step 1
+   - `FRONTEND_URL` = your Vercel URL (already set by the blueprint)
+
+(Resend works too: set `RESEND_API_KEY` instead of `BREVO_API_KEY`. Its free tier only
+delivers to your own address until you verify a domain.) Check
+`<backend>/api/health` — `"email_enabled": true` means it's on.
+
+How it behaves: the emailed link works once, expires in 30 minutes, and carries its
+token in the URL *fragment* (`/#reset=…`), which browsers never send to any server.
+Asking for a reset always answers the same way whether or not the email has an account.
+The link's address comes only from `FRONTEND_URL` / `ALLOWED_ORIGINS`, never from request
+headers, and if neither names a real site the feature stays off.
+
+## Account security
+
+- **Lockout:** 5 wrong passwords for one email from one address, or 30 for one email
+  overall or one address overall, within 15 minutes, answers `429` with `Retry-After`.
+  Limits are held in memory, so they are exact on a single instance (Render's free
+  tier) and per-instance if you scale out; multiple instances would need Redis.
+- **Sessions:** every login token carries the account's session version. Changing or
+  resetting a password signs out every other device, and deleting an account ends all
+  of its sessions, within about 20 seconds across instances and immediately on the
+  instance that handled the change.
+- **Delete account** removes the user, every repo they ingested, all chat history, and
+  the embedded chunks of any repo no other user shares.
+
+## Tests and CI
+
+`cd backend && python -m pytest tests -q` runs everything that needs no external
+service. Set `TEST_DATABASE_URL` to a throwaway Postgres (with the pgvector
+extension) to also run the real-SQL tests; **they drop the app's tables**, so never
+point them at a real database. GitHub Actions
+([`backend-tests.yml`](.github/workflows/backend-tests.yml)) does exactly that on
+Python 3.11 with the pinned `requirements.txt`, and builds the frontend.
+
 ## Local dev (unchanged)
 
 ```bash

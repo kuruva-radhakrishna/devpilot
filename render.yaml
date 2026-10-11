@@ -18,6 +18,12 @@ services:
         sync: false                # (with VECTOR_BACKEND=pgvector) the embedded chunks themselves
       - key: JWT_SECRET            # signs login sessions — generated, kept secret
         generateValue: true
+      - key: FRONTEND_URL          # where emailed password-reset links point
+        value: https://devpilot-ruby.vercel.app
+      - key: MAIL_FROM             # a sender address verified with your email provider
+        sync: false
+      - key: BREVO_API_KEY         # optional — turns on "Forgot password" (see DEPLOY.md)
+        sync: false
       - key: LLM_PROVIDER
         value: gemini
       - key: GEMINI_MODEL

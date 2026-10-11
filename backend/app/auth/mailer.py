@@ -21,8 +21,10 @@ from app.config import get_settings
 
 
 def enabled() -> bool:
+    """Reset email needs a sender, a provider key, AND a known frontend URL to put in
+    the link (so a wildcard ALLOWED_ORIGINS without FRONTEND_URL keeps it off)."""
     s = get_settings()
-    return bool(s.mail_from and (s.brevo_api_key or s.resend_api_key))
+    return bool(s.mail_from and (s.brevo_api_key or s.resend_api_key) and s.reset_base_url)
 
 
 def send(to: str, subject: str, text: str, html_body: str | None = None) -> bool:

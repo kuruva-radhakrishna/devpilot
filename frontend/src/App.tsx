@@ -1,172 +1,84 @@
-import { useEffect, useRef, useState } from "react";
+import { isValidElement, useEffect, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import {
   ask,
   AuthError,
-  clearApiKey,
   clearToken,
   deleteRepo,
   renameRepo,
   getApiKey,
   getHealth,
+  getMe,
   getMessages,
   getToken,
   ingestRepo,
   listRepos,
-  login,
-  register,
-  setApiKey,
-  setToken,
-  validateKey,
   type Health,
   type RepoMeta,
 } from "./api";
+import AccountModal from "./components/AccountModal";
+import ApiKeyPanel from "./components/ApiKeyPanel";
+import AuthScreen from "./components/AuthScreen";
+import HelpModal from "./components/HelpModal";
+import ThemeSwitch from "./components/ThemeSwitch";
 import {
   BrandMark,
-  IconBars,
+  IconAlert,
+  IconArrowRight,
   IconBot,
   IconChat,
-  IconCheck,
   IconCheckSmall,
+  IconCopy,
+  IconEdit,
   IconHelp,
   IconKey,
   IconLogOut,
   IconMenu,
-  IconMoon,
-  IconNetwork,
   IconPlus,
   IconSearch,
   IconSend,
-  IconSun,
-  IconEdit,
   IconTrash,
   IconXSmall,
 } from "./icons";
-
-const FEATURES = [
-  { Icon: IconSearch, title: "Code-aware RAG", body: "Indexes your repo with hybrid semantic + keyword search." },
-  { Icon: IconChat, title: "Grounded Q&A", body: "Reads real files and shows exactly which tools it used." },
-  { Icon: IconCheck, title: "Autonomous repair", body: "Patches bugs and verifies the fix with real test runs." },
-  { Icon: IconBars, title: "Evaluated, not vibes", body: "97% repair success, measured on a 40-case benchmark." },
-  { Icon: IconNetwork, title: "Provider-agnostic", body: "Runs on Gemini or a local Ollama model." },
-  { Icon: IconKey, title: "Bring your own key", body: "Use your own free key — the demo quota never runs out." },
-];
+import { describeError, initials } from "./lib";
 
 const EXAMPLES = [
   "Give me a high-level overview of this codebase.",
-  "Where is authentication handled and how?",
+  "Where is authentication handled, and how?",
   "What happens when a request hits the main entry point?",
+  "Which files would I change to add a new feature?",
 ];
 
-function describeError(e: unknown): string {
-  if (e instanceof AuthError) return "Your session ended — please log in again.";
-  if (e instanceof TypeError) {
-    // fetch() throws a bare TypeError (not an HTTP error) when the connection
-    // itself failed — e.g. a host request-duration limit killing a long
-    // request. There's no server response to show.
-    return (
-      "Network error — the request was interrupted before it finished. " +
-      "Large repos (or free-tier rate-limit backoffs) can take a while and may " +
-      "exceed the hosting timeout; try again, a smaller repo, or your own API key."
-    );
-  }
-  return (e as Error).message || "Something went wrong.";
+const SAMPLE_REPOS = [
+  { name: "pallets/click", url: "https://github.com/pallets/click", note: "Python command-line toolkit" },
+  { name: "sindresorhus/p-limit", url: "https://github.com/sindresorhus/p-limit", note: "Tiny JavaScript library, quick to index" },
+  { name: "kuruva-radhakrishna/Talent-Flow", url: "https://github.com/kuruva-radhakrishna/Talent-Flow", note: "A full-stack React app" },
+];
+
+/** Plain text of a React subtree (for the code-block copy button). */
+function textOf(node: ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(textOf).join("");
+  if (isValidElement(node)) return textOf((node.props as { children?: ReactNode }).children);
+  return "";
 }
 
-function initials(name: string, email: string): string {
-  const src = (name || "").trim() || email || "?";
-  const parts = src.split(/\s+/).filter(Boolean);
-  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-  return src.slice(0, 2).toUpperCase();
-}
-
-function Wordmark() {
-  return (
-    <span className="wordmark">
-      <span className="dim">Dev</span><span className="pop">Pilot</span>
-    </span>
-  );
-}
-
-function ThemeToggle() {
-  const [theme, setTheme] = useState(
-    () => document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark"
-  );
-  function toggle() {
-    const next = theme === "dark" ? "light" : "dark";
-    setTheme(next);
-    document.documentElement.setAttribute("data-theme", next);
-    try { localStorage.setItem("devpilot_theme", next); } catch { /* ignore */ }
+function CodeBlock({ children }: { children?: ReactNode }) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(textOf(children).replace(/\n$/, ""));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch { /* clipboard can be blocked */ }
   }
   return (
-    <button className="icon-btn" onClick={toggle} title="Toggle theme">
-      {theme === "dark" ? <IconSun /> : <IconMoon />}
-    </button>
-  );
-}
-
-function HelpModal({ onClose }: { onClose: () => void }) {
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <h2>How DevPilot works</h2>
-          <button className="icon-btn" onClick={onClose} title="Close">✕</button>
-        </div>
-        <div className="muted">An AI agent that reads, debugs, and repairs a real codebase.</div>
-
-        <h4>Quick start</h4>
-        <ol className="modal-steps">
-          <li><span>Paste a GitHub URL (or a local path) and hit <b>Add repo</b> — it indexes the repo for retrieval.</span></li>
-          <li><span>Pick that repo from the sidebar, then either ask a question or describe a bug.</span></li>
-          <li><span>Get a grounded answer citing real files — or a patch, verified by running the actual tests.</span></li>
-        </ol>
-
-        <h4>What it can do</h4>
-        <ul className="modal-list good">
-          <li>Answer questions about a codebase, grounded in files it actually retrieved and read.</li>
-          <li>Propose a fix, apply it as a patch, and run the repo's tests to verify it.</li>
-          <li>Work with your own Gemini key so you're never limited by the shared demo quota.</li>
-          <li>Remember every repo and conversation — come back later and pick up where you left off.</li>
-        </ul>
-
-        <h4>What it can't do (yet)</h4>
-        <ul className="modal-list bad">
-          <li>Push, deploy, or open a PR — patches are proposed, not shipped anywhere.</li>
-          <li>Guarantee a fix on the first try — repair retries automatically, but isn't 100%.</li>
-          <li>Run tests in a fully isolated sandbox on this hosted demo — stick to trusted repos.</li>
-        </ul>
-
-        <div className="modal-foot">
-          Source, benchmark results, and the write-up:{" "}
-          <a href="https://github.com/kuruva-radhakrishna/devpilot" target="_blank" rel="noreferrer">
-            github.com/kuruva-radhakrishna/devpilot
-          </a>
-        </div>
-      </div>
+    <div className="codeblock">
+      <button type="button" className="code-copy" onClick={copy} title="Copy code">
+        {copied ? <><IconCheckSmall width={13} height={13} /> Copied</> : <><IconCopy width={13} height={13} /> Copy</>}
+      </button>
+      <pre>{children}</pre>
     </div>
-  );
-}
-
-function FeatureList() {
-  return (
-    <>
-      {FEATURES.map((f) => (
-        <div className="feature-row" key={f.title}>
-          <div className="feature-icon"><f.Icon width={17} height={17} /></div>
-          <div>
-            <div className="feature-title">{f.title}</div>
-            <div className="feature-body">{f.body}</div>
-          </div>
-        </div>
-      ))}
-    </>
   );
 }
 
@@ -179,17 +91,25 @@ interface ChatMessage {
 function ChatBubble({ msg }: { msg: ChatMessage }) {
   if (msg.role === "user") {
     return (
-      <div className="bubble-row user">
+      <div className="msg user">
         <div className="bubble user">{msg.content}</div>
       </div>
     );
   }
   return (
-    <div className="bubble-row assistant">
-      <div className={msg.role === "error" ? "bubble error" : "bubble assistant"}>
-        <ReactMarkdown>{msg.content}</ReactMarkdown>
+    <div className="msg assistant">
+      <div className={msg.role === "error" ? "card answer error" : "card answer"}>
+        {msg.role === "error" && <div className="answer-title"><IconAlert width={16} height={16} /> Something went wrong</div>}
+        <div className="md">
+          <ReactMarkdown components={{ pre: ({ children }) => <CodeBlock>{children}</CodeBlock> }}>
+            {msg.content}
+          </ReactMarkdown>
+        </div>
         {!!msg.toolNames?.length && (
-          <div className="bubble-tools">🔧 {msg.toolNames.join(", ")}</div>
+          <div className="meta">
+            <span className="meta-label">Used</span>
+            {[...new Set(msg.toolNames)].map((t) => <span className="pill" key={t}>{t}</span>)}
+          </div>
         )}
       </div>
     </div>
@@ -198,257 +118,92 @@ function ChatBubble({ msg }: { msg: ChatMessage }) {
 
 function TypingBubble() {
   return (
-    <div className="bubble-row assistant">
-      <div className="bubble assistant typing">
-        <span className="typing-dots"><span /><span /><span /></span>
+    <div className="msg assistant">
+      <div className="card answer pending">
+        <span className="spin" aria-hidden="true" />
+        <span>Reading the code…</span>
       </div>
     </div>
   );
 }
 
-function AuthScreen({ onAuthed }: { onAuthed: (email: string, name: string) => void }) {
-  const [mode, setMode] = useState<"login" | "register">("login");
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [showHelp, setShowHelp] = useState(false);
-
-  const ready = mode === "login"
-    ? !!email.trim() && password.length >= 8
-    : !!name.trim() && !!email.trim() && password.length >= 8;
-
-  async function submit() {
-    if (!ready) return;
-    setError("");
-    setBusy(true);
-    try {
-      const res = mode === "login"
-        ? await login(email.trim().toLowerCase(), password)
-        : await register(email.trim().toLowerCase(), password, name.trim());
-      setToken(res.token);
-      onAuthed(res.email, res.name);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="app wide">
-      <div className="topbar" style={{ marginBottom: 0, justifyContent: "flex-end" }}>
-        <div className="corner-controls">
-          <button className="icon-btn" onClick={() => setShowHelp(true)} title="How DevPilot works">
-            <IconHelp />
-          </button>
-          <ThemeToggle />
-        </div>
-      </div>
-      {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
-      <div className="auth-wrap">
-        <div className="brand" style={{ marginBottom: 10 }}>
-          <BrandMark />
-          <Wordmark />
-        </div>
-        <div className="tagline" style={{ marginBottom: 28 }}>
-          Reads your repo, debugs it, and ships the fix.
-        </div>
-
-        <div className="auth-card">
-          <div className="auth-form-side">
-            <div className="tabs">
-              <button
-                className={mode === "login" ? "tab active" : "tab"}
-                onClick={() => { setMode("login"); setError(""); }}
-              >
-                Log in
-              </button>
-              <button
-                className={mode === "register" ? "tab active" : "tab"}
-                onClick={() => { setMode("register"); setError(""); }}
-              >
-                Create account
-              </button>
-            </div>
-
-            {mode === "register" && (
-              <>
-                <label>Name</label>
-                <input
-                  autoComplete="name"
-                  placeholder="Ada Lovelace"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                />
-                <div style={{ height: 14 }} />
-              </>
-            )}
-
-            <label>Email</label>
-            <input
-              type="email"
-              autoComplete="email"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-            <div style={{ height: 14 }} />
-            <label>Password {mode === "register" && <span className="muted">· min 8 characters</span>}</label>
-            <input
-              type="password"
-              autoComplete={mode === "login" ? "current-password" : "new-password"}
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && ready && submit()}
-            />
-            <div style={{ height: 18 }} />
-            <button style={{ width: "100%" }} onClick={submit} disabled={busy || !ready}>
-              {busy ? "Please wait…" : mode === "login" ? "Log in" : "Create account"}
-            </button>
-            {error && <div className="error">{error}</div>}
-          </div>
-
-          <div className="auth-feature-side">
-            <h3>Why DevPilot</h3>
-            <FeatureList />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** Error details (network messages, raw exception text) rarely end in
- * punctuation — ensure one so it doesn't run into the following sentence. */
-function withPeriod(s: string): string {
-  const t = s.trim();
-  return t && !/[.!?]$/.test(t) ? `${t}.` : t;
-}
-
-type KeyStatus = "unknown" | "checking" | "valid" | "invalid";
-
-function ApiKeyPanel({ onClose, onKeyChange }: { onClose: () => void; onKeyChange: (has: boolean) => void }) {
-  const [keyInput, setKeyInput] = useState("");
-  const [keySaved, setKeySaved] = useState(!!getApiKey());
-  const [status, setStatus] = useState<KeyStatus>("unknown");
-  const [detail, setDetail] = useState("");
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function onDocClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    }
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, [onClose]);
-
-  async function saveAndTest() {
-    const k = keyInput.trim();
-    if (!k) return;
-    setApiKey(k);
-    setKeySaved(true);
-    onKeyChange(true);
-    setKeyInput("");
-    setStatus("checking"); setDetail("");
-    try {
-      const r = await validateKey(k);
-      setStatus(r.valid ? "valid" : "invalid");
-      setDetail(r.valid ? "" : (r.detail || "Key rejected."));
-    } catch (e) {
-      setStatus("invalid");
-      setDetail((e as Error).message || "Could not verify the key.");
-    }
-  }
-  function removeKey() {
-    clearApiKey();
-    setKeySaved(false);
-    onKeyChange(false);
-    setStatus("unknown"); setDetail("");
-  }
-
-  return (
-    <div className="popover popover-up" ref={ref}>
-      <div className="popover-head">
-        <IconKey width={15} height={15} />
-        <label style={{ margin: 0 }}>Your Gemini API key <span className="muted">— optional</span></label>
-      </div>
-      <div className="row" style={{ marginTop: 10 }}>
-        <input
-          type="password"
-          placeholder={keySaved ? "•••••••• (saved)" : "AIza… paste your own key"}
-          value={keyInput}
-          onChange={(e) => setKeyInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && keyInput.trim() && saveAndTest()}
-        />
-      </div>
-      <div className="row" style={{ marginTop: 8 }}>
-        <button onClick={saveAndTest} disabled={!keyInput.trim() || status === "checking"} style={{ flex: 1 }}>
-          {status === "checking" ? "Testing…" : "Save & Test"}
-        </button>
-        {keySaved && <button className="ghost" onClick={removeKey}>Clear</button>}
-      </div>
-      <div className="key-status">
-        {status === "valid" && <IconCheckSmall width={14} height={14} className="status-icon good" />}
-        {status === "invalid" && <IconXSmall width={14} height={14} className="status-icon bad" />}
-        {(status === "unknown" || status === "checking") && (
-          <span className={status === "checking" ? "dot checking" : keySaved ? "dot on" : "dot off"} />
-        )}
-        <span>
-          {status === "checking" && "Checking with Gemini…"}
-          {status === "valid" && "Valid — spends your own free quota, not the shared demo's."}
-          {status === "invalid" && withPeriod(detail || "This key was rejected by Gemini.")}
-          {status === "unknown" && (keySaved
-            ? "Saved. Using it for requests — click Save & Test again to re-verify."
-            : "Using the server's shared key (limited free quota).")}
-          {" "}Stored only in this browser. Get one free at{" "}
-          <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer">
-            aistudio.google.com/app/apikey
-          </a>.
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function EmptyState({ source, setSource, ingestBusy, onIngest, error }: {
+function EmptyState({ source, setSource, ingestBusy, onIngest }: {
   source: string;
   setSource: (v: string) => void;
   ingestBusy: boolean;
   onIngest: () => void;
-  error: string;
 }) {
   return (
     <div className="empty-state">
-      <IconBot width={40} height={40} />
-      <div className="empty-title">Where should we begin?</div>
-      <div className="muted" style={{ marginBottom: 20, textAlign: "center", maxWidth: 380 }}>
-        Add a repo — a GitHub URL or a local path — and DevPilot will index it so you can ask
-        questions or have it fix a bug.
+      <div className="empty-inner">
+        <span className="hero-mark"><BrandMark size={52} /></span>
+        <h1 className="hero-title">Ask your codebase anything</h1>
+        <p className="hero-sub">
+          Add a GitHub repo and DevPilot indexes it, then answers questions with the files it
+          actually read, so you can trust where each answer came from.
+        </p>
+
+        <form className="hero-ingest" onSubmit={(e) => { e.preventDefault(); if (source.trim()) onIngest(); }}>
+          <input
+            aria-label="GitHub repository URL"
+            placeholder="https://github.com/owner/repo"
+            value={source}
+            onChange={(e) => setSource(e.target.value)}
+          />
+          <button type="submit" className="btn-primary" disabled={ingestBusy || !source.trim()}>
+            {ingestBusy ? "Indexing…" : "Add repo"}
+          </button>
+        </form>
+        <div className="hint">Indexing takes a minute or two for a mid-size repo.</div>
+
+        <h2 className="eyebrow">Or try one of these</h2>
+        <div className="examples">
+          {SAMPLE_REPOS.map((r) => (
+            <button type="button" className="ex" key={r.url} onClick={() => setSource(r.url)}>
+              <span>
+                <span className="ex-title">{r.name}</span>
+                <span className="ex-note">{r.note}</span>
+              </span>
+            </button>
+          ))}
+        </div>
       </div>
-      <div className="empty-ingest">
-        <input
-          placeholder="https://github.com/pallets/flask  ·  or  ·  ./some/local/repo"
-          value={source}
-          onChange={(e) => setSource(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && source.trim() && onIngest()}
-        />
-        <button onClick={onIngest} disabled={ingestBusy || !source.trim()}>
-          {ingestBusy ? "Indexing…" : "Add repo"}
-        </button>
-      </div>
-      {error && <div className="error" style={{ maxWidth: 420 }}>{error}</div>}
+    </div>
+  );
+}
+
+/** Shown until the server's health check answers. On a free host the first request
+ * after idle can take up to a minute, so say so rather than show an empty screen. */
+function Splash() {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setSlow(true), 3500);
+    return () => clearTimeout(t);
+  }, []);
+  return (
+    <div className="splash" role="status" aria-live="polite">
+      <BrandMark size={52} />
+      <span className="spin" aria-hidden="true" />
+      <div className="splash-text">{slow ? "Waking up the server…" : "Loading…"}</div>
+      {slow && (
+        <div className="splash-sub">
+          The free hosting plan puts the server to sleep when it's idle, so the first visit can take up to a minute.
+        </div>
+      )}
     </div>
   );
 }
 
 export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
+  const [healthState, setHealthState] = useState<"loading" | "ok" | "down">("loading");
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [authed, setAuthed] = useState(!!getToken());
+  const [resetToken, setResetToken] = useState(() => {
+    const m = window.location.hash.match(/reset=([A-Za-z0-9_-]+)/);
+    return m ? m[1] : "";
+  });
 
   const [repos, setRepos] = useState<Record<string, RepoMeta>>({});
   const [search, setSearch] = useState("");
@@ -463,13 +218,15 @@ export default function App() {
   const [askBusy, setAskBusy] = useState(false);
   const [error, setError] = useState("");
   const [showHelp, setShowHelp] = useState(false);
+  const [showAccount, setShowAccount] = useState(false);
   const [showKeyPanel, setShowKeyPanel] = useState(false);
   const [hasKey, setHasKey] = useState(!!getApiKey());
   const [confirmDeleteId, setConfirmDeleteId] = useState("");
   const [renamingId, setRenamingId] = useState("");
   const [renameDraft, setRenameDraft] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const chatWindowRef = useRef<HTMLDivElement>(null);
+  const feedRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
 
   const messages = chats[repoId] ?? [];
   function appendMessage(id: string, msg: ChatMessage) {
@@ -500,20 +257,46 @@ export default function App() {
   }, [repoId]);
 
   useEffect(() => {
-    const el = chatWindowRef.current;
+    const el = feedRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages.length, askBusy]);
 
+  // Grow the composer with its content, up to a cap.
   useEffect(() => {
-    getHealth().then(setHealth).catch(() => setHealth(null));
+    const el = composerRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 150)}px`;
+  }, [draft, repoId]);
+
+  useEffect(() => {
+    getHealth()
+      .then((h) => { setHealth(h); setHealthState("ok"); })
+      .catch(() => {
+        setHealth(null);
+        setHealthState("down");
+        setError("Can't reach the DevPilot server right now. It may be restarting. Try again in a minute.");
+      });
   }, []);
 
   const authRequired = health?.auth_enabled ?? false;
   const showApp = !authRequired || authed;
 
-  const refresh = () => listRepos().then(setRepos).catch(() => {});
+  // Who is signed in (also proves the stored session is still valid — a password
+  // change on another device or a deleted account answers 401 here).
   useEffect(() => {
-    if (!showApp) return;
+    if (!authRequired || !authed) return;
+    getMe()
+      .then((me) => { setEmail(me.email); setName(me.name); })
+      .catch((e) => { if (e instanceof AuthError) setAuthed(false); });
+  }, [authRequired, authed]);
+
+  const refresh = () => listRepos().then(setRepos).catch((e) => { if (e instanceof AuthError) setAuthed(false); });
+  useEffect(() => {
+    // Wait for the health check: before it answers we don't yet know whether a
+    // login screen is about to replace the app, and the Help popup (and the
+    // "seen" flag) would be spent on a screen that's never shown.
+    if (!health || !showApp) return;
     refresh();
     // First-ever visit to the working app: open Help once, unprompted.
     try {
@@ -522,7 +305,7 @@ export default function App() {
         localStorage.setItem("devpilot_seen_help", "1");
       }
     } catch { /* ignore */ }
-  }, [showApp]);
+  }, [health, showApp]);
 
   function handleRequestError(e: unknown) {
     if (e instanceof AuthError) setAuthed(false);
@@ -535,6 +318,14 @@ export default function App() {
     setChats({});
     setRepos({});
     setRepoId("");
+    setEmail(""); setName("");
+    setShowAccount(false);
+    fetchedHistoryFor.current.clear();
+  }
+
+  function finishReset() {
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    setResetToken("");
   }
 
   async function onIngest() {
@@ -568,12 +359,12 @@ export default function App() {
     setRenameDraft(r.display_name ?? r.repo_id);
   }
   async function commitRename(id: string) {
-    const name = renameDraft.trim();
+    const newName = renameDraft.trim();
     setRenamingId("");
-    if (!name || name === repos[id]?.display_name) return;
+    if (!newName || newName === repos[id]?.display_name) return;
     try {
-      await renameRepo(id, name);
-      setRepos((r) => ({ ...r, [id]: { ...r[id], display_name: name } }));
+      await renameRepo(id, newName);
+      setRepos((r) => ({ ...r, [id]: { ...r[id], display_name: newName } }));
     } catch (e) {
       handleRequestError(e);
     }
@@ -600,8 +391,17 @@ export default function App() {
     }
   }
 
-  if (health && authRequired && !authed) {
-    return <AuthScreen onAuthed={(em, nm) => { setEmail(em); setName(nm); setAuthed(true); }} />;
+  if (healthState === "loading") return <Splash />;
+
+  if (health && ((authRequired && !authed) || resetToken)) {
+    return (
+      <AuthScreen
+        health={health}
+        resetToken={resetToken}
+        onResetDone={finishReset}
+        onAuthed={(em, nm) => { setEmail(em); setName(nm); setAuthed(true); }}
+      />
+    );
   }
 
   const repoList = Object.values(repos);
@@ -618,27 +418,39 @@ export default function App() {
   return (
     <div className="shell">
       {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
+      {showAccount && (
+        <AccountModal
+          name={name}
+          email={email}
+          repoCount={repoList.length}
+          onClose={() => setShowAccount(false)}
+          onSessionEnded={logout}
+          onDeleted={logout}
+        />
+      )}
 
-      <header className="topbar-global">
+      <header className="topbar">
         <div className="topbar-left">
-          <button className="icon-btn mobile-menu-btn" onClick={() => setSidebarOpen(true)} title="Menu">
+          <button className="icon-btn mobile-menu-btn" onClick={() => setSidebarOpen(true)} title="Menu" aria-label="Open menu">
             <IconMenu />
           </button>
           <div className="brand">
             <BrandMark size={30} />
-            <Wordmark />
+            <span className="wordmark">DevPilot</span>
+            <span className="brand-sub">AI software-engineering agent</span>
           </div>
         </div>
         <div className="topbar-right">
-          <ThemeToggle />
+          <ThemeSwitch />
           {authRequired && authed && (
             <>
-              <div className="user-chip" title={email}>
+              <button className="user-chip" onClick={() => setShowAccount(true)} title="Account settings">
                 <span className="avatar">{initials(name, email)}</span>
                 <span className="user-chip-name">{name || email}</span>
-              </div>
-              <button className="ghost" onClick={logout} title="Log out">
+              </button>
+              <button className="btn-chip" onClick={logout} title="Log out" aria-label="Log out">
                 <IconLogOut width={16} height={16} />
+                <span className="chip-label">Log out</span>
               </button>
             </>
           )}
@@ -648,44 +460,46 @@ export default function App() {
       <div className="shell-body">
         {sidebarOpen && <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />}
         <aside className={sidebarOpen ? "sidebar open" : "sidebar"}>
-          <div className="sidebar-ingest">
+          <h2 className="side-title">Add a repository</h2>
+          <form className="sidebar-ingest" onSubmit={(e) => { e.preventDefault(); if (source.trim()) onIngest(); }}>
             <input
-              placeholder="GitHub URL or local path…"
+              aria-label="GitHub repository URL"
+              placeholder="GitHub URL…"
               value={source}
               onChange={(e) => setSource(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && source.trim() && onIngest()}
             />
-            <button className="icon-btn on" onClick={onIngest} disabled={ingestBusy || !source.trim()} title="Add repo">
-              {ingestBusy ? <span className="typing-dots small"><span /><span /><span /></span> : <IconPlus width={16} height={16} />}
+            <button type="submit" className="btn-primary square" disabled={ingestBusy || !source.trim()} title="Add repo" aria-label="Add repo">
+              {ingestBusy ? <span className="spin light" /> : <IconPlus width={17} height={17} />}
             </button>
-          </div>
+          </form>
 
           <div className="sidebar-search">
             <IconSearch width={15} height={15} />
             <input
+              aria-label="Search repositories"
               placeholder="Search repos…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
 
+          <h2 className="side-title">Repositories <span className="count">{repoList.length}</span></h2>
           <div className="sidebar-list">
             {filteredRepos.length === 0 ? (
               <div className="sidebar-empty">
-                {repoList.length === 0 ? "No repos yet — add one above." : "No repos match your search."}
+                {repoList.length === 0 ? "No repos yet. Add one above." : "No repos match your search."}
               </div>
             ) : (
               filteredRepos.map((r) => (
                 <div
                   key={r.repo_id}
-                  className={r.repo_id === repoId ? "sidebar-item active" : "sidebar-item"}
+                  className={r.repo_id === repoId ? "repo-item active" : "repo-item"}
                   onClick={() => {
                     if (renamingId === r.repo_id) return;
                     setRepoId(r.repo_id); setSidebarOpen(false);
                   }}
                 >
-                  <IconChat width={16} height={16} />
-                  <div className="sidebar-item-text">
+                  <div className="repo-text">
                     {renamingId === r.repo_id ? (
                       <input
                         autoFocus
@@ -701,33 +515,33 @@ export default function App() {
                       />
                     ) : (
                       <>
-                        <div className="sidebar-item-title">{r.display_name ?? r.repo_id}</div>
-                        <div className="sidebar-item-sub">{r.files} files · {r.chunks} chunks</div>
+                        <div className="repo-title">{r.display_name ?? r.repo_id}</div>
+                        <div className="repo-sub">{r.files} files · {r.chunks} chunks</div>
                       </>
                     )}
                   </div>
                   {confirmDeleteId === r.repo_id ? (
-                    <div className="sidebar-item-confirm" onClick={(e) => e.stopPropagation()}>
-                      <button className="icon-btn danger" onClick={() => onDeleteRepo(r.repo_id)} title="Confirm delete">
+                    <div className="repo-confirm" onClick={(e) => e.stopPropagation()}>
+                      <button className="icon-btn danger" onClick={() => onDeleteRepo(r.repo_id)} title="Confirm delete" aria-label="Confirm delete">
                         <IconCheckSmall width={14} height={14} />
                       </button>
-                      <button className="icon-btn" onClick={() => setConfirmDeleteId("")} title="Cancel">
+                      <button className="icon-btn" onClick={() => setConfirmDeleteId("")} title="Cancel" aria-label="Cancel">
                         <IconXSmall width={14} height={14} />
                       </button>
                     </div>
                   ) : renamingId === r.repo_id ? null : (
-                    <div className="sidebar-item-actions">
+                    <div className="repo-actions">
                       <button
-                        className="sidebar-item-action"
+                        className="repo-action"
                         onClick={(e) => { e.stopPropagation(); startRename(r); }}
-                        title="Rename"
+                        title="Rename" aria-label="Rename"
                       >
                         <IconEdit width={14} height={14} />
                       </button>
                       <button
-                        className="sidebar-item-action danger-hover"
+                        className="repo-action danger-hover"
                         onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(r.repo_id); }}
-                        title="Delete this repo"
+                        title="Delete this repo" aria-label="Delete this repo"
                       >
                         <IconTrash width={15} height={15} />
                       </button>
@@ -739,9 +553,11 @@ export default function App() {
           </div>
 
           <div className="sidebar-footer">
-            <button className="sidebar-footer-btn" onClick={() => setShowHelp(true)}>
-              <IconHelp width={16} height={16} /> Help
-            </button>
+            {authRequired && authed && (
+              <button className="sidebar-footer-btn" onClick={() => setShowAccount(true)}>
+                <span className="avatar sm">{initials(name, email)}</span> Account
+              </button>
+            )}
             <div className="settings-wrap">
               <button className="sidebar-footer-btn" onClick={() => setShowKeyPanel((v) => !v)}>
                 <IconKey width={16} height={16} /> API key
@@ -749,51 +565,80 @@ export default function App() {
               </button>
               {showKeyPanel && <ApiKeyPanel onClose={() => setShowKeyPanel(false)} onKeyChange={setHasKey} />}
             </div>
+            <button className="sidebar-footer-btn" onClick={() => setShowHelp(true)}>
+              <IconHelp width={16} height={16} /> Help
+            </button>
           </div>
         </aside>
 
         <main className="main-content">
+          {error && (
+            <div className="banner" role="alert">
+              <IconAlert width={17} height={17} />
+              <span>{error}</span>
+              <button className="icon-btn" onClick={() => setError("")} title="Dismiss" aria-label="Dismiss">
+                <IconXSmall width={14} height={14} />
+              </button>
+            </div>
+          )}
+
           {!repoId ? (
-            <EmptyState source={source} setSource={setSource} ingestBusy={ingestBusy} onIngest={onIngest} error={error} />
+            <EmptyState source={source} setSource={setSource} ingestBusy={ingestBusy} onIngest={onIngest} />
           ) : (
-            <div className="chat-panel main-chat">
+            <div className="main-chat">
               <div className="chat-header">
-                <IconChat width={16} height={16} />
-                <div className="chat-header-title">{activeRepo?.display_name ?? activeRepo?.repo_id ?? repoId}</div>
-                <div className="muted chat-header-sub">{activeRepo?.source}</div>
+                <span className="chat-header-icon"><IconChat width={16} height={16} /></span>
+                <div className="chat-header-text">
+                  <div className="chat-header-title">{activeRepo?.display_name ?? activeRepo?.repo_id ?? repoId}</div>
+                  <div className="chat-header-sub">{activeRepo?.source}</div>
+                </div>
               </div>
 
-              <div className="chat-window" ref={chatWindowRef}>
-                {messages.length === 0 ? (
-                  <div className="chat-empty">
-                    <IconBot width={26} height={26} />
-                    <div>Ask anything about this repo.</div>
-                    <div className="chat-suggestions">
-                      {EXAMPLES.map((ex) => (
-                        <span className="pill" key={ex} onClick={() => setDraft(ex)}>{ex}</span>
-                      ))}
+              <div className="feed" ref={feedRef} role="log" aria-live="polite">
+                <div className="wrap">
+                  {messages.length === 0 ? (
+                    <div className="chat-empty">
+                      <span className="hero-mark small"><IconBot width={26} height={26} /></span>
+                      <h2 className="chat-empty-title">Ask anything about this repo</h2>
+                      <p>Answers cite the files DevPilot read. Try one of these:</p>
+                      <div className="examples">
+                        {EXAMPLES.map((ex) => (
+                          <button type="button" className="ex" key={ex}
+                            onClick={() => { setDraft(ex); composerRef.current?.focus(); }}>
+                            <span className="ex-title">{ex}</span>
+                            <IconArrowRight className="ex-arrow" width={16} height={16} />
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ) : (
-                  messages.map((m, i) => <ChatBubble key={i} msg={m} />)
-                )}
-                {askBusy && <TypingBubble />}
+                  ) : (
+                    messages.map((m, i) => <ChatBubble key={i} msg={m} />)
+                  )}
+                  {askBusy && <TypingBubble />}
+                </div>
               </div>
 
-              <div className="chat-input-row">
-                <textarea
-                  rows={1}
-                  placeholder="Message DevPilot…"
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); }
-                  }}
-                />
-                <button className="send-btn" onClick={onSend} disabled={askBusy || !draft.trim()} title="Send">
-                  <IconSend width={16} height={16} />
-                </button>
-              </div>
+              <form className="composer" onSubmit={(e) => { e.preventDefault(); onSend(); }}>
+                <div className="wrap">
+                  <div className="composer-box">
+                    <textarea
+                      ref={composerRef}
+                      rows={1}
+                      aria-label="Your question"
+                      placeholder="Ask about this codebase…"
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); }
+                      }}
+                    />
+                    <button type="submit" className="send" disabled={askBusy || !draft.trim()} title="Send" aria-label="Send">
+                      <IconSend width={18} height={18} />
+                    </button>
+                  </div>
+                  <div className="hint">Enter to send · Shift+Enter for a new line</div>
+                </div>
+              </form>
             </div>
           )}
         </main>
