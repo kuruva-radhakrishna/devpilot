@@ -86,4 +86,8 @@ def health():
         "repair_enabled": repair_ok,
         "repair_runner": repair_runner,
         "repair_reason": "" if repair_ok else repair_reason,
+        # The remote runner's public address (not a secret: it's an HTTPS endpoint that
+        # needs a token to do anything). The browser pings it to wake a sleeping
+        # free-tier instance before a repair — calls from this server don't wake it.
+        "repair_wake_url": s.sandbox_url.rstrip("/") if repair_ok and repair_runner == "remote" else "",
     }

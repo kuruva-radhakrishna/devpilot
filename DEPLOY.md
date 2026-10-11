@@ -81,6 +81,15 @@ that executes untrusted code is a **separate service that holds no secrets**.
 - **Check it:** `<backend>/api/health` → `"repair_enabled": true, "repair_runner": "remote"`,
   and `<runner>/healthz` → `"isolation": true, "ready": true`.
 
+**Waking the runner (a real finding from testing on Render's free tier):** a sleeping
+instance did *not* wake when the backend called it (every attempt got `502` for 100 s),
+yet it woke within seconds when called from a browser or `curl`. So the **browser**
+wakes it: the app pings `<runner>/healthz` once it's usable (`repair_wake_url` in
+`/api/health`) and "Fix it" waits behind a visible *Wake the runner* step before it
+submits the job. The backend still retries for up to `SANDBOX_WAKE_SECONDS` as a second
+chance, and reports "tests not executed" rather than a fake result if the runner never
+answers.
+
 Repairs run as **background jobs** (`POST /api/agent/debug` returns a `job_id`;
 `GET /api/agent/debug/{job_id}` reports live progress and the result), because a
 repair can outlive a free host's request time limit, and the runner may need about a

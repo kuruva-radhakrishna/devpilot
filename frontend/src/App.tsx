@@ -15,6 +15,7 @@ import {
   ingestRepo,
   listRepos,
   startRepair,
+  warmRunner,
   type Health,
   type RepairEvent,
   type RepoMeta,
@@ -326,7 +327,7 @@ export default function App() {
   // (The server also saves it to the history, so a reload shows the same thing.)
   const jobId = job?.id;
   useEffect(() => {
-    if (!job) return;
+    if (!job || !job.id) return; // no id yet: still waking the runner
     const { id, repoId: jobRepo } = job;
     let finished = false;
     async function tick() {
@@ -387,7 +388,13 @@ export default function App() {
   const authRequired = health?.auth_enabled ?? false;
   const showApp = !authRequired || authed;
   const repairEnabled = health?.repair_enabled ?? false;
+  const wakeUrl = health?.repair_wake_url;
   useEffect(() => { if (health && !repairEnabled && mode === "fix") setMode("ask"); }, [health, repairEnabled, mode]);
+  // Give a sleeping free-tier runner a head start as soon as the app is usable, so it is
+  // usually awake by the time someone clicks "Fix it".
+  useEffect(() => {
+    if (showApp && repairEnabled && wakeUrl) void warmRunner(wakeUrl);
+  }, [showApp, repairEnabled, wakeUrl]);
 
   // Who is signed in (also proves the stored session is still valid — a password
   // change on another device or a deleted account answers 401 here).
@@ -484,11 +491,24 @@ export default function App() {
     setError("");
     appendMessage(rId, { role: "user", content: `${REPAIR_PREFIX}${bug}` });
     setDraft("");
+    // Wake the runner from here, in the browser, BEFORE the job starts: a sleeping free
+    // instance doesn't wake for calls from our own server. Show it as the first step.
+    let ticker: ReturnType<typeof setInterval> | undefined;
+    if (wakeUrl) {
+      const t0 = Date.now();
+      setJob({ repoId: rId, id: "", elapsed: 0, events: [
+        { t: 0, stage: "warm", message: "Waking the test runner. Free hosting puts it to sleep when idle, so this can take up to a minute." }] });
+      ticker = setInterval(() => setJob((j) => (j && !j.id ? { ...j, elapsed: (Date.now() - t0) / 1000 } : j)), 1000);
+      await warmRunner(wakeUrl);
+      clearInterval(ticker);
+    }
     try {
       const started = await startRepair(rId, bug, path);
       try { sessionStorage.setItem(JOB_KEY, JSON.stringify({ repoId: rId, id: started.job_id })); } catch { /* ignore */ }
       setJob({ repoId: rId, id: started.job_id, events: [], elapsed: 0 });
     } catch (e) {
+      if (ticker) clearInterval(ticker);
+      setJob(null);
       if (e instanceof AuthError) setAuthed(false);
       appendMessage(rId, { role: "error", content: describeError(e) });
     }

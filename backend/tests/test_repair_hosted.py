@@ -433,11 +433,13 @@ def test_repair_is_refused_when_no_safe_runner_is_configured(api, monkeypatch):
     health = api.client.get("/api/health").json()
     assert health["repair_enabled"] is False and health["repair_runner"] == "remote"
     assert "isn't configured" in health["repair_reason"]
+    assert health["repair_wake_url"] == ""  # never advertise a runner we won't use
 
 
 def test_health_advertises_repair_when_the_runner_is_configured(api):
     health = api.client.get("/api/health").json()
     assert health["repair_enabled"] is True and health["repair_runner"] == "remote"
+    assert health["repair_wake_url"].startswith("http://127.0.0.1:")  # lets the browser wake the runner
 
 
 # --------------------------------------------------------------------------- #

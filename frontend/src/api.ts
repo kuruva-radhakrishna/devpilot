@@ -71,6 +71,20 @@ export interface Health {
   repair_enabled?: boolean;
   repair_runner?: string;
   repair_reason?: string;
+  /** Public address of the remote runner; the browser pings it to wake a sleeping host. */
+  repair_wake_url?: string;
+}
+
+/** Wakes a sleeping free-tier runner. Browser requests wake it reliably (calls from our
+ * own server don't), and a no-cors fetch needs no CORS support from the runner. Resolves
+ * when the runner answers or `ms` passes; never throws. */
+export function warmRunner(url: string | undefined, ms = 90_000): Promise<void> {
+  if (!url) return Promise.resolve();
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), ms);
+  return fetch(url.replace(/\/$/, "") + "/healthz", { mode: "no-cors", cache: "no-store", signal: ctl.signal })
+    .then(() => undefined, () => undefined)
+    .finally(() => clearTimeout(timer));
 }
 
 /** Thrown on a 401 so the UI can drop the session and show the login screen. */

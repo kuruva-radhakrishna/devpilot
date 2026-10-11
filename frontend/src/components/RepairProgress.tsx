@@ -13,6 +13,7 @@ function rowState(e: RepairEvent & { skipped?: boolean }, isLast: boolean, runni
 }
 
 const LABEL: Record<string, string> = {
+  warm: "Wake the runner",
   baseline: "Reproduce",
   baseline_done: "Reproduce",
   retrieval: "Find the code",
