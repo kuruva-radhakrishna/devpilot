@@ -9,6 +9,10 @@ repo with three backends selected by SANDBOX_BACKEND:
                 mounted. This is the real thing and the one to demo/talk about.
   "local"    -> plain subprocess on the host. NOT isolated. Dev convenience only,
                 for when Docker isn't available; prints a loud warning.
+  "remote"   -> a separate, secret-free runner service (see /runner) that runs
+                pytest on an uploaded copy of the workspace. This is how the hosted
+                demo runs repairs: a PaaS has no Docker daemon, so isolation comes
+                from the runner's unprivileged uid + resource limits instead.
   "disabled" -> returns a stub (original skeleton behavior).
 
 The design mirrors the vector-store's pluggable backends: one interface, swap by
@@ -17,11 +21,17 @@ applied to an LLM agent.
 """
 from __future__ import annotations
 
+import io
 import os
 import shutil
 import subprocess
+import tarfile
+import threading
+import time
 import uuid
 from dataclasses import dataclass
+
+import httpx
 
 from app.config import get_settings
 
@@ -115,7 +125,133 @@ def run_in_sandbox(
                 timed_out=False, backend="blocked", skipped=True,
             )
         return _run_local(workspace_dir, command, timeout)
+    if backend == "remote":
+        return _run_remote(workspace_dir, command, timeout)
     return _run_docker(workspace_dir, command, timeout, allow_network)
+
+
+def repair_status() -> tuple[bool, str, str]:
+    """(available, runner label, reason when unavailable) for the repair feature.
+
+    Repair executes a repo's tests, so it is only offered where that is safe: an
+    isolated runner (remote or docker), or the unisolated local backend on a machine
+    that isn't a hosted multi-user deployment."""
+    s = get_settings()
+    backend = s.sandbox_backend.lower()
+    if backend == "disabled":
+        return False, "off", "Repair is turned off on this server."
+    if backend == "local":
+        if local_execution_blocked():
+            return False, "local", LOCAL_BLOCKED_MESSAGE
+        return True, "local", ""
+    if backend == "remote":
+        if not (s.sandbox_url and s.sandbox_token):
+            return False, "remote", "The remote test runner isn't configured on this server."
+        return True, "remote", ""
+    return True, "docker", ""
+
+
+# --------------------------------------------------------------------------- #
+# Remote backend: an isolated runner service (see /runner)
+# --------------------------------------------------------------------------- #
+_REMOTE_EXCLUDE_DIRS = {".git", "__pycache__", ".pytest_cache", "node_modules", ".venv", "venv", ".tmp"}
+_REMOTE_MAX_UPLOAD = 7 * 1024 * 1024  # a little under the runner's own 8 MB limit
+_runner_awake_until = 0.0
+_wake_lock = threading.Lock()
+
+
+def _tar_workspace(workspace_dir: str) -> bytes | None:
+    """The workspace as a .tar.gz of plain files (no .git, no symlinks), or None if it
+    would be too large to upload."""
+    buf = io.BytesIO()
+    root = os.path.abspath(workspace_dir)
+    with tarfile.open(fileobj=buf, mode="w:gz", compresslevel=6) as tf:
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [d for d in dirnames if d not in _REMOTE_EXCLUDE_DIRS]
+            for name in filenames:
+                full = os.path.join(dirpath, name)
+                if os.path.islink(full) or name.endswith(".pyc"):
+                    continue
+                tf.add(full, arcname=os.path.relpath(full, root).replace(os.sep, "/"), recursive=False)
+        if buf.tell() > _REMOTE_MAX_UPLOAD:
+            return None
+    data = buf.getvalue()
+    return None if len(data) > _REMOTE_MAX_UPLOAD else data
+
+
+def _wake_runner(base_url: str, wait_seconds: int) -> str | None:
+    """Make sure the runner answers /healthz, waiting out a free-tier cold start.
+    Returns an error message, or None when it is up and able to isolate code."""
+    global _runner_awake_until
+    with _wake_lock:
+        if time.monotonic() < _runner_awake_until:
+            return None
+        deadline = time.monotonic() + wait_seconds
+        last = "no answer"
+        while True:
+            try:
+                r = httpx.get(f"{base_url}/healthz", timeout=15)
+                if r.status_code == 200:
+                    info = r.json()
+                    if not info.get("ready"):
+                        return ("The test runner is up but not ready (it needs a token and the ability "
+                                "to isolate code), so it refuses to run tests.")
+                    _runner_awake_until = time.monotonic() + 600
+                    return None
+                last = f"HTTP {r.status_code}"
+            except (httpx.HTTPError, ValueError) as exc:
+                last = type(exc).__name__
+            if time.monotonic() >= deadline:
+                return f"The test runner didn't wake up in time ({last}). Try again in a minute."
+            time.sleep(3)
+
+
+def _run_remote(workspace_dir: str, command: list[str], timeout: int) -> SandboxResult:
+    s = get_settings()
+
+    def skipped(message: str) -> SandboxResult:
+        # Not executed: reported as such, never as a (fake) test failure or pass.
+        return SandboxResult(1, message, "", False, "remote", skipped=True)
+
+    if not (s.sandbox_url and s.sandbox_token):
+        return skipped("The remote test runner isn't configured on this server.")
+    if command[1:3] != ["-m", "pytest"]:
+        return skipped("The remote runner only runs pytest suites.")
+    test_path = command[-1] if len(command) > 4 and not command[-1].startswith("-") else ""
+
+    archive = _tar_workspace(workspace_dir)
+    if archive is None:
+        return skipped("This repository is too large to send to the test runner.")
+
+    base = s.sandbox_url.rstrip("/")
+    problem = _wake_runner(base, s.sandbox_wake_seconds)
+    if problem:
+        return skipped(problem)
+    try:
+        r = httpx.post(
+            f"{base}/run", params={"test_path": test_path, "timeout": min(int(timeout), 120)},
+            content=archive, headers={"Authorization": f"Bearer {s.sandbox_token}"},
+            timeout=httpx.Timeout(connect=15, read=min(int(timeout), 120) + 40, write=60, pool=15),
+        )
+    except httpx.HTTPError as exc:
+        return skipped(f"Couldn't reach the test runner ({type(exc).__name__}).")
+
+    if r.status_code == 200:
+        try:
+            body = r.json()
+            return SandboxResult(int(body["returncode"]), str(body.get("output", "")), "",
+                                 bool(body.get("timed_out")), "remote")
+        except (ValueError, KeyError, TypeError):
+            return skipped("The test runner sent back something unreadable.")
+    try:
+        detail = str(r.json().get("detail", ""))
+    except ValueError:
+        detail = ""
+    if r.status_code in (401, 403):
+        return skipped("The test runner rejected this server's token. Check SANDBOX_TOKEN.")
+    if r.status_code == 503:
+        return skipped(detail or "The test runner is busy. Try again in a moment.")
+    return skipped(f"The test runner refused the run (HTTP {r.status_code}): {detail}".strip())
 
 
 # --------------------------------------------------------------------------- #

@@ -72,6 +72,8 @@ def health():
     s = get_settings()
     from app.auth import mailer
     from app.llm.client import provider_name
+    from app.sandbox.runner import repair_status
+    repair_ok, repair_runner, repair_reason = repair_status()
     return {
         "status": "ok",
         "provider": provider_name(),
@@ -80,4 +82,8 @@ def health():
         "gemini_key_set": bool(s.gemini_api_key),
         "auth_enabled": s.auth_available,
         "email_enabled": s.auth_available and mailer.enabled(),
+        # Whether the "Fix a bug" mode can run here, which runner does it, and if not, why.
+        "repair_enabled": repair_ok,
+        "repair_runner": repair_runner,
+        "repair_reason": "" if repair_ok else repair_reason,
     }

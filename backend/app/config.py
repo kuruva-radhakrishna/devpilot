@@ -73,10 +73,21 @@ class Settings(BaseSettings):
     sandbox_pids_limit: int = 256
     sandbox_timeout: int = 120  # seconds for the test phase
     workspace_dir: str = "./.workspaces"
+    # "remote" backend: an isolated, secret-free runner service (see /runner) that
+    # executes `pytest` on an uploaded workspace. SANDBOX_URL is its public address
+    # and SANDBOX_TOKEN the shared bearer token (the runner's RUNNER_TOKEN).
+    sandbox_url: str = ""
+    sandbox_token: str = ""
+    sandbox_wake_seconds: int = 100  # a free-tier runner can take ~a minute to wake
     # In hosted multi-user mode (DATABASE_URL set) the "local" backend is refused,
     # because it would run strangers' repo tests with no isolation next to this
     # server's secrets. Set ALLOW_UNSANDBOXED_LOCAL=true only if every user is trusted.
     allow_unsandboxed_local: bool = False
+
+    # Indexing a path on the server's own disk is a local-development convenience. On a
+    # hosted multi-user deployment (DATABASE_URL set) it would let any user index and
+    # read arbitrary server files, so it is refused unless explicitly allowed.
+    allow_local_paths: bool = False
 
     # --- Repair loop ---
     repair_max_iters: int = 3  # patch attempts before giving up

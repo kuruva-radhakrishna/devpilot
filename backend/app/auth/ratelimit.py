@@ -65,9 +65,11 @@ register_ip = SlidingWindowLimiter(10, HOUR)
 forgot_email = SlidingWindowLimiter(3, HOUR)
 forgot_ip = SlidingWindowLimiter(10, HOUR)
 reset_ip = SlidingWindowLimiter(20, HOUR)
+# Each repair costs model calls and a runner slot, so cap how many one user can start.
+repair_user = SlidingWindowLimiter(6, HOUR)
 
 _ALL = [login_fail_pair, login_fail_email, login_fail_ip, sensitive_fail,
-        register_ip, forgot_email, forgot_ip, reset_ip]
+        register_ip, forgot_email, forgot_ip, reset_ip, repair_user]
 
 
 def reset_all() -> None:

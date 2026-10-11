@@ -53,7 +53,25 @@ def make_repo_id(source: str) -> str:
 def default_display_name(source: str) -> str:
     """Friendly default shown in the UI (e.g. sidebar) until a user renames
     it — the repo_id's hash suffix is meaningless to look at day to day."""
+    if source.startswith(SAMPLE_PREFIX):
+        return f"{source[len(SAMPLE_PREFIX):]} (sample)"
     return _base_name(source)
+
+
+# Bundled demo repos (one deliberate bug + a failing test each) live in /examples and
+# are addressed as "sample:<name>". That is the only way to index something from the
+# server's own disk on a hosted deployment.
+SAMPLE_PREFIX = "sample:"
+_EXAMPLES_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "examples"))
+
+
+def sample_dir(name: str) -> str:
+    if not re.fullmatch(r"[a-z0-9_]+", name or ""):
+        raise ValueError("That isn't a valid sample name.")
+    path = os.path.join(_EXAMPLES_DIR, name)
+    if not os.path.isdir(path):
+        raise ValueError(f"Unknown sample '{name}'.")
+    return path
 
 
 def prepare_repo_dir(source: str, repo_id: str) -> str:
@@ -61,7 +79,11 @@ def prepare_repo_dir(source: str, repo_id: str) -> str:
     local path). Public because callers may need to re-run just this step —
     e.g. recovering a git clone that a container restart wiped, without
     re-chunking/re-embedding anything."""
-    cache_root = get_settings().repo_cache_dir
+    settings = get_settings()
+    if source.startswith(SAMPLE_PREFIX):
+        return sample_dir(source[len(SAMPLE_PREFIX):])
+
+    cache_root = settings.repo_cache_dir
     os.makedirs(cache_root, exist_ok=True)
     dest = os.path.join(cache_root, repo_id)
 
@@ -75,7 +97,12 @@ def prepare_repo_dir(source: str, repo_id: str) -> str:
         )
         return dest
 
-    # Local path: index it in place (no copy) to save disk/time.
+    # Local path: index it in place (no copy) to save disk/time. Local development only.
+    if settings.auth_available and not settings.allow_local_paths:
+        raise ValueError(
+            "Local paths can't be indexed on this hosted demo. Use a GitHub URL, or "
+            "one of the bundled sample repos."
+        )
     if not os.path.isdir(source):
         raise FileNotFoundError(f"Local path does not exist: {source}")
     return os.path.abspath(source)

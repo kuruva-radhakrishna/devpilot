@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from typing import Callable
 
 from app.agent.runtime import load_prompt
 from app.config import get_settings
@@ -116,13 +117,26 @@ def run_repair(
     test_path: str = "",
     prompt_version: str = "v4",  # whole-function format (validated: 83%->97%)
     retrieval: bool = True,
+    on_progress: Callable[[dict], None] | None = None,
 ) -> RepairResult:
     """Diagnose and fix a failing test. When retrieval=False (the evaluation
     baseline), the model gets no repository context — only the failing test
-    output — so the benchmark can measure how much code-aware RAG actually adds."""
+    output — so the benchmark can measure how much code-aware RAG actually adds.
+
+    `on_progress`, if given, is called with a small dict per step ({"stage", "message",
+    ...}) so a UI can show live progress. It never affects the outcome: a callback that
+    raises is ignored."""
     settings = get_settings()
     system = load_prompt("patch", prompt_version)
     mode = "baseline" if not retrieval else prompt_version
+
+    def emit(**event) -> None:
+        if on_progress is None:
+            return
+        try:
+            on_progress(event)
+        except Exception:  # noqa: BLE001 — progress reporting must never break a repair
+            pass
 
     with tracing.start_trace("repair.run", repo_id=repo_id, bug=bug_report,
                              prompt_version=prompt_version, mode=mode) as _tr:
@@ -130,10 +144,12 @@ def run_repair(
         ws = create_workspace(repo_dir, repo_id)
         try:
             # 1. Baseline test run — confirm there's actually a failure to fix.
+            emit(stage="baseline", message="Running the repo's tests to reproduce the failure")
             with tracing.span("run_tests", phase="baseline"):
                 report: TestReport = run_tests_in_workspace(ws.path, test_path)
                 tracing.add_attrs(summary=report.summary(), passed=report.ok)
             tests_before = report.summary()
+            emit(stage="baseline_done", message=tests_before, passed=report.ok, skipped=report.skipped)
             if report.skipped:
                 # No test run happened, so nothing could validate a patch. Stop now
                 # rather than spend LLM calls on a fix that can never be verified.
@@ -153,7 +169,11 @@ def run_repair(
                 )
 
             # retrieval=False is the no-RAG baseline: give the model no source.
+            emit(stage="retrieval", message="Finding the code that matters")
             candidates = _candidate_files(repo_id, bug_report, ws) if retrieval else []
+            emit(stage="retrieval_done", files=candidates,
+                 message="Reading " + (", ".join(candidates[:4]) or "no files") +
+                         ("…" if len(candidates) > 4 else ""))
             iterations: list[RepairIteration] = []
             last_root_cause = last_explanation = ""
             last_error: str | None = None
@@ -165,6 +185,8 @@ def run_repair(
                     file_blocks = [b for p in candidates if (b := _read_numbered(ws, p))]
                     prompt = _build_prompt(bug_report, report, file_blocks, attempt, last_error)
 
+                    emit(stage="attempt", n=attempt, total=settings.repair_max_iters,
+                         message=f"Asking the model for a fix (attempt {attempt} of {settings.repair_max_iters})")
                     raw = generate(prompt, system=system, temperature=0.1)
                     obj = extract_json(raw, kind="object")
                     last_root_cause = obj.get("root_cause") or last_root_cause
@@ -181,6 +203,8 @@ def run_repair(
                         iterations.append(RepairIteration(
                             attempt, last_root_cause, [], "no valid patch produced", False))
                         tracing.add_attrs(outcome="no_patch")
+                        emit(stage="attempt_failed", n=attempt,
+                             message="The model's answer had no usable patch, so it will try again")
                         continue
 
                     any_generated = True
@@ -189,12 +213,17 @@ def run_repair(
                         iterations.append(RepairIteration(
                             attempt, last_root_cause, [], "identical patch repeated — stopping", False))
                         tracing.add_attrs(outcome="repeated_patch")
+                        emit(stage="attempt_failed", n=attempt,
+                             message="The model proposed the same patch again, so it stopped")
                         break
                     seen_sigs.add(sig)
 
+                    emit(stage="patch", n=attempt,
+                         message="Applying the patch to " + ", ".join(sorted({fp.file for fp in patches})))
                     with tracing.span("apply_patch", files=[fp.file for fp in patches]):
                         pres = apply_patch(ws, patches)
                     if not pres.applied:
+                        emit(stage="attempt_failed", n=attempt, message=f"Patch rejected: {pres.error}")
                         last_error = (
                             f"Your previous patch could not be applied: {pres.error}. "
                             "Re-check the file paths and that start_line/end_line are exact, "
@@ -208,6 +237,7 @@ def run_repair(
 
                     # A patch that changes nothing wastes a test run and would loop.
                     if not git_diff(ws).strip():
+                        emit(stage="attempt_failed", n=attempt, message="The patch changed nothing, so it will try again")
                         last_error = (
                             "Your previous patch did not change any code. Make a concrete "
                             "edit that fixes the failing test."
@@ -219,9 +249,11 @@ def run_repair(
                         continue
 
                     any_applied = True
+                    emit(stage="verify", n=attempt, message="Re-running the tests with the fix applied")
                     with tracing.span("run_tests", phase="verify"):
                         report = run_tests_in_workspace(ws.path, test_path)
                         tracing.add_attrs(summary=report.summary(), passed=report.ok)
+                    emit(stage="verify_done", n=attempt, message=report.summary(), passed=report.ok)
                     iterations.append(RepairIteration(
                         attempt, last_root_cause, pres.files_changed,
                         report.summary(), report.ok))
