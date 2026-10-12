@@ -88,7 +88,8 @@ def run_ok(files, **kw) -> dict:
 
 def passes(files, **kw) -> dict:
     body = run_ok(files, **kw)
-    assert body["returncode"] == 0, body["output"]
+    # one line, so it survives into the CI annotation (which only keeps a failure's first line)
+    assert body["returncode"] == 0, repr(body["output"][-900:]) + " install=" + repr(body.get("install"))[:300]
     return body
 
 
@@ -158,7 +159,7 @@ def test_go_runs_a_passing_and_a_failing_suite():
     assert body["lang"] == "go" and "PASS" in body["output"]
     bad = dict(good, **{"calc/calc.go": "package calc\n\nfunc Add(a, b int) int { return a - b }\n"})
     failed = run_ok(bad, lang="go", timeout=90)
-    assert failed["returncode"] != 0 and "FAIL" in failed["output"]
+    assert failed["returncode"] != 0 and "FAIL" in failed["output"], repr(failed["output"][-900:])
 
 
 def test_a_toolchain_the_runner_does_not_have_or_an_unknown_language_is_refused():
