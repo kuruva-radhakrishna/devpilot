@@ -16,6 +16,8 @@ def result_to_dict(result: RepairResult) -> dict:
         "trace_id": result.trace_id,
         "tests_before": result.tests_before,
         "tests_after": result.tests_after,
+        "lang": result.lang,
+        "install_note": result.install_note,
         "iterations": [
             {
                 "attempt": it.attempt,
@@ -36,6 +38,12 @@ def repair_markdown(r: RepairResult) -> str:
     if r.note == "tests_not_executed":
         why = (r.test_output or "").strip()
         return "**The tests could not be run, so nothing was changed.**\n\n" + (why or "No reason was given.")
+    if r.note == "dependencies_unavailable":
+        return ("**The repo's dependencies couldn't be installed, so nothing was changed.** "
+                "Without its packages the tests fail for reasons that have nothing to do with the "
+                "code, and a patch would only be a guess.\n\n```\n"
+                + ((r.install_note or r.test_output or "").strip()[-1500:] or "No details were given.")
+                + "\n```")
     if r.note == "baseline_passing":
         return "**Nothing to fix.** This repo's tests already pass."
 

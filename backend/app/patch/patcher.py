@@ -24,6 +24,7 @@ import uuid
 from dataclasses import dataclass, field
 
 from app.config import get_settings
+from app.patch import functions
 from app.rag.chunker import IGNORE_DIRS, path_is_within
 
 
@@ -195,26 +196,55 @@ def _is_test_path(rel: str) -> bool:
         any(p in _TEST_DIRS for p in parts[:-1])
         or name == "conftest.py"
         or name.startswith("test_")
-        or name.endswith(("_test.py", ".test.js", ".test.ts", ".spec.js", ".spec.ts"))
+        or name.endswith(("_test.py", "_test.go"))
+        or ".test." in name
+        or ".spec." in name
     )
+
+
+def _python_functions(tree) -> list[tuple[str, object]]:
+    """Every function in a module as (qualified name, node): `f`, `Class.method`,
+    `outer.inner`."""
+    import ast
+    found: list[tuple[str, object]] = []
+
+    def visit(node, prefix: str) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                qualified = f"{prefix}{child.name}"
+                found.append((qualified, child))
+                visit(child, qualified + ".")
+            elif isinstance(child, ast.ClassDef):
+                visit(child, f"{prefix}{child.name}.")
+            else:
+                visit(child, prefix)
+
+    visit(tree, "")
+    return found
 
 
 def _replace_function(lines: list[str], func_name: str, new_source: str):
     """Replace a function's whole source span (located by name via AST) with
-    new_source. Returns (new_lines, None) or (None, error)."""
+    new_source. Returns (new_lines, None) or (None, error).
+
+    `func_name` may be bare (`withdraw`) or qualified (`Account.withdraw`). A bare name
+    that matches several functions is refused rather than guessed."""
     import ast
     try:
         tree = ast.parse("".join(lines))
     except SyntaxError as exc:
         return None, f"target file does not parse: {exc}"
 
-    target = None
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == func_name:
-            target = node
-            break
-    if target is None:
+    functions = _python_functions(tree)
+    exact = [(q, n) for q, n in functions if q == func_name]
+    matches = exact or [(q, n) for q, n in functions if n.name == func_name]
+    if not matches:
         return None, f"function '{func_name}' not found in file"
+    if len(matches) > 1:
+        options = ", ".join(sorted(q for q, _ in matches))
+        return None, (f"'{func_name}' is ambiguous: it matches {options}. "
+                      "Use the qualified name, e.g. Class.method.")
+    target = matches[0][1]
 
     start = target.lineno            # 1-based `def` line (decorators, if any, stay above)
     end = target.end_lineno or start  # inclusive
@@ -259,7 +289,16 @@ def apply_patch(ws: Workspace, patches: list[FilePatch]) -> PatchResult:
 
             # Whole-function mode
             if fp.function and fp.new_source is not None:
-                new_lines, err = _replace_function(lines, fp.function, fp.new_source)
+                ext = os.path.splitext(resolved)[1].lower()
+                if ext == ".py":
+                    new_lines, err = _replace_function(lines, fp.function, fp.new_source)
+                elif ext in functions.LANG_BY_EXT:
+                    new_text, err = functions.replace_function(
+                        "".join(lines), functions.LANG_BY_EXT[ext], fp.function, fp.new_source)
+                    new_lines = new_text.splitlines(keepends=True) if new_text is not None else None
+                else:
+                    new_lines, err = None, (
+                        f"whole-function patches aren't supported for {ext or 'this kind of'} files")
                 if err:
                     return PatchResult(False, files_changed=changed,
                                        error=f"{fp.file}: {err}")

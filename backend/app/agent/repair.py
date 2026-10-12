@@ -39,7 +39,7 @@ from app.patch.patcher import (
 )
 from app.rag.chunker import path_is_within
 from app.rag.retriever import retrieve
-from app.sandbox.tests import TestReport, run_tests_in_workspace
+from app.sandbox.tests import LANGUAGE_LABELS, TestReport, detect_language, run_tests_in_workspace
 
 MAX_FILE_LINES = 400  # cap per file sent to the LLM
 
@@ -69,6 +69,8 @@ class RepairResult:
     trace_id: str | None = None     # observability trace for this repair run
     tests_before: str = ""          # test summary before any patch (the failure)
     tests_after: str = ""           # test summary after the final patch
+    lang: str = "python"            # which language's tests were run
+    install_note: str = ""          # what installing the repo's dependencies did, when it ran
 
 
 def _read_numbered(workspace: Workspace, rel_path: str) -> str | None:
@@ -127,6 +129,9 @@ def run_repair(
     ...}) so a UI can show live progress. It never affects the outcome: a callback that
     raises is ignored."""
     settings = get_settings()
+    lang = detect_language(repo_dir)
+    if lang != "python" and prompt_version == "v4":
+        prompt_version = "v5"  # same whole-function idea, with JS/TS/Go function syntax and names
     system = load_prompt("patch", prompt_version)
     mode = "baseline" if not retrieval else prompt_version
 
@@ -146,8 +151,8 @@ def run_repair(
             # 1. Baseline test run — confirm there's actually a failure to fix.
             emit(stage="baseline", message="Running the repo's tests to reproduce the failure")
             with tracing.span("run_tests", phase="baseline"):
-                report: TestReport = run_tests_in_workspace(ws.path, test_path)
-                tracing.add_attrs(summary=report.summary(), passed=report.ok)
+                report: TestReport = run_tests_in_workspace(ws.path, test_path, lang)
+                tracing.add_attrs(summary=report.summary(), passed=report.ok, lang=lang)
             tests_before = report.summary()
             emit(stage="baseline_done", message=tests_before, passed=report.ok, skipped=report.skipped)
             if report.skipped:
@@ -157,7 +162,18 @@ def run_repair(
                     success=False, root_cause="", explanation="",
                     files_changed=[], diff="", test_output=report.raw_output,
                     note="tests_not_executed", trace_id=trace_id,
-                    tests_before=tests_before, tests_after=tests_before,
+                    tests_before=tests_before, tests_after=tests_before, lang=lang,
+                )
+            if report.install_failed and not report.ok:
+                # The tests ran without the packages they import, so their failure says
+                # nothing about the code. Patching against that would be guessing.
+                emit(stage="deps_failed", message="Couldn't install the repo's dependencies")
+                return RepairResult(
+                    success=False, root_cause="", explanation="",
+                    files_changed=[], diff="", test_output=report.install_note or report.raw_output,
+                    note="dependencies_unavailable", trace_id=trace_id,
+                    tests_before=tests_before, tests_after=tests_before, lang=lang,
+                    install_note=report.install_note,
                 )
             if report.ok:
                 return RepairResult(
@@ -165,7 +181,8 @@ def run_repair(
                     explanation="The test suite already passes.",
                     files_changed=[], diff="", test_output=report.raw_output,
                     note="baseline_passing", trace_id=trace_id,
-                    tests_before=tests_before, tests_after=tests_before,
+                    tests_before=tests_before, tests_after=tests_before, lang=lang,
+                    install_note=report.install_note,
                 )
 
             # retrieval=False is the no-RAG baseline: give the model no source.
@@ -183,7 +200,7 @@ def run_repair(
             for attempt in range(1, settings.repair_max_iters + 1):
                 with tracing.span("repair.iteration", attempt=attempt):
                     file_blocks = [b for p in candidates if (b := _read_numbered(ws, p))]
-                    prompt = _build_prompt(bug_report, report, file_blocks, attempt, last_error)
+                    prompt = _build_prompt(bug_report, report, file_blocks, attempt, last_error, lang)
 
                     emit(stage="attempt", n=attempt, total=settings.repair_max_iters,
                          message=f"Asking the model for a fix (attempt {attempt} of {settings.repair_max_iters})")
@@ -226,8 +243,9 @@ def run_repair(
                         emit(stage="attempt_failed", n=attempt, message=f"Patch rejected: {pres.error}")
                         last_error = (
                             f"Your previous patch could not be applied: {pres.error}. "
-                            "Re-check the file paths and that start_line/end_line are exact, "
-                            "1-indexed, and within the file shown."
+                            "Re-check the file path and that the function name (qualified, e.g. "
+                            "Class.method, when the bare name is ambiguous) matches a function in "
+                            "the file shown, and that new_source is one complete, valid function."
                         )
                         iterations.append(RepairIteration(
                             attempt, last_root_cause, [], f"patch invalid: {pres.error}", False))
@@ -251,7 +269,7 @@ def run_repair(
                     any_applied = True
                     emit(stage="verify", n=attempt, message="Re-running the tests with the fix applied")
                     with tracing.span("run_tests", phase="verify"):
-                        report = run_tests_in_workspace(ws.path, test_path)
+                        report = run_tests_in_workspace(ws.path, test_path, lang)
                         tracing.add_attrs(summary=report.summary(), passed=report.ok)
                     emit(stage="verify_done", n=attempt, message=report.summary(), passed=report.ok)
                     iterations.append(RepairIteration(
@@ -269,6 +287,7 @@ def run_repair(
                             patch_generated=any_generated, patch_applied=any_applied,
                             trace_id=trace_id,
                             tests_before=tests_before, tests_after=report.summary(),
+                            lang=lang, install_note=report.install_note,
                         )
                     # Still failing: keep edits and feed the failure back next attempt.
                     last_error = None
@@ -283,6 +302,7 @@ def run_repair(
                 patch_generated=any_generated, patch_applied=any_applied,
                 trace_id=trace_id,
                 tests_before=tests_before, tests_after=report.summary(),
+                lang=lang, install_note=report.install_note,
             )
         finally:
             # Keep the workspace for inspection during a demo; comment out to clean up.
@@ -298,8 +318,10 @@ def _reset_workspace(ws: Workspace) -> None:
 
 
 def _build_prompt(bug: str, report: TestReport, file_blocks: list[str],
-                  attempt: int, last_error: str | None) -> str:
+                  attempt: int, last_error: str | None, lang: str = "python") -> str:
     header = f"BUG REPORT:\n{bug}\n\n"
+    if lang != "python":
+        header += f"LANGUAGE: {LANGUAGE_LABELS.get(lang, lang)}\n\n"
     if attempt > 1:
         header += (
             f"This is repair attempt #{attempt}. Your previous patch did not fix "

@@ -1,0 +1,9 @@
+{
+  "name": "js-cart",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DevPilot sample: a small CommonJS cart with one real bug and a failing node:test suite.",
+  "scripts": {
+    "test": "node --test"
+  }
+}

@@ -47,6 +47,7 @@ def fake_runner(monkeypatch):
     monkeypatch.setenv("SANDBOX_URL", runner.url)
     monkeypatch.setenv("SANDBOX_TOKEN", TOKEN)
     monkeypatch.setattr(sandbox, "_runner_awake_until", 0.0)
+    monkeypatch.setattr(sandbox, "_POLL_EVERY", 0.01)
     get_settings.cache_clear()
     yield runner
     runner.stop()
@@ -70,11 +71,12 @@ GOOD_WS = {"a.py": "def f():\n    return 1\n", "tests/test_a.py": "from a import
 # --------------------------------------------------------------------------- #
 def test_remote_runs_pytest_and_maps_the_result(fake_runner, tmp_path):
     ws = _workspace(tmp_path, GOOD_WS)
-    result = sandbox.run_in_sandbox(ws, PYTEST_CMD + ["tests/test_a.py"])
+    result = sandbox.run_in_sandbox(ws, PYTEST_CMD + ["tests/test_a.py"], test_path="tests/test_a.py")
     assert result.ok and result.backend == "remote" and "1 passed" in result.stdout
     (upload,) = fake_runner.uploads()
-    assert upload["auth"] == f"Bearer {TOKEN}"
-    assert upload["query"]["test_path"] == "tests/test_a.py"
+    assert upload["path"] == "/jobs" and upload["auth"] == f"Bearer {TOKEN}"
+    assert upload["query"]["test_path"] == "tests/test_a.py" and upload["query"]["lang"] == "python"
+    assert upload["query"]["install"] == "0"
 
 
 def test_remote_reports_real_failures_as_failures_not_skips(fake_runner, tmp_path):
@@ -136,7 +138,9 @@ def test_a_runner_that_cannot_isolate_is_not_used(fake_runner, tmp_path):
 
 def test_unconfigured_or_unsupported_requests_are_refused_locally(fake_runner, tmp_path, monkeypatch):
     ws = _workspace(tmp_path, GOOD_WS)
-    assert "only runs pytest" in sandbox.run_in_sandbox(ws, ["npm", "test"]).stdout
+    assert "only runs pytest" in sandbox.run_in_sandbox(ws, ["npm", "test"]).stdout  # lang defaults to python
+    assert "only runs pytest" in sandbox.run_in_sandbox(ws, ["python", "-c", "x"], lang="node").stdout
+    assert "only runs pytest" in sandbox.run_in_sandbox(ws, ["go", "test"], lang="ruby").stdout
     monkeypatch.setenv("SANDBOX_TOKEN", "")
     get_settings.cache_clear()
     assert "isn't configured" in sandbox.run_in_sandbox(ws, PYTEST_CMD).stdout
@@ -147,6 +151,59 @@ def test_oversized_workspaces_are_not_uploaded(fake_runner, tmp_path, monkeypatc
     monkeypatch.setattr(sandbox, "_REMOTE_MAX_UPLOAD", 200)
     ws = _workspace(tmp_path, {"big.py": os.urandom(5000).hex()})
     assert "too large" in sandbox.run_in_sandbox(ws, PYTEST_CMD).stdout and not fake_runner.uploads()
+
+
+def test_the_language_test_target_and_install_flag_are_passed_to_the_runner(fake_runner, tmp_path):
+    ws = _workspace(tmp_path, {"package.json": "{}", "t.test.js": "x"})
+    fake_runner.execute = False
+    result = sandbox.run_in_sandbox(ws, ["npm", "test", "--silent"], lang="node", test_path="t.test.js", install=True)
+    assert result.ok
+    (upload,) = fake_runner.uploads()
+    assert upload["query"] == {"lang": "node", "test_path": "t.test.js", "timeout": "120", "install": "1"}
+
+
+def test_the_job_is_polled_until_it_finishes(fake_runner, tmp_path):
+    fake_runner.execute = False
+    fake_runner.running_polls = 3
+    result = sandbox.run_in_sandbox(_workspace(tmp_path, GOOD_WS), PYTEST_CMD)
+    assert result.ok
+    assert len([r for r in fake_runner.requests if r["path"].startswith("/jobs/")]) == 4
+
+
+def test_dependency_install_results_are_reported(fake_runner, tmp_path):
+    fake_runner.execute = False
+    fake_runner.install = {"ran": True, "ok": True, "cached": False, "summary": "3 package(s) installed"}
+    ok = sandbox.run_in_sandbox(_workspace(tmp_path, GOOD_WS), PYTEST_CMD, install=True)
+    assert ok.install_note == "3 package(s) installed" and ok.install_failed is False
+
+    fake_runner.install = {"ran": True, "ok": False, "summary": "dependency install failed: npm reported an error",
+                           "failed": ["left-pad", "react"], "log": "npm ERR! 404 Not Found - left-padd"}
+    bad = sandbox.run_in_sandbox(_workspace(tmp_path / "b", GOOD_WS), PYTEST_CMD, install=True)
+    assert bad.install_failed and "left-pad" in bad.install_note and "404" in bad.install_note
+    assert not bad.skipped  # the tests did run; they just ran without their packages
+
+    fake_runner.install = {"ran": False, "ok": True, "summary": "dependency install not requested"}
+    assert sandbox.run_in_sandbox(_workspace(tmp_path / "c", GOOD_WS), PYTEST_CMD).install_note == ""
+
+
+@pytest.mark.parametrize("setup,fragment", [
+    (dict(job_error="Unsafe path in archive: ../x"), "Unsafe path"),
+    (dict(job_http_status=404), "lost this run"),
+    (dict(job_http_status=500), "HTTP 500"),
+])
+def test_a_job_that_cannot_finish_is_not_executed_never_a_fake_result(fake_runner, tmp_path, setup, fragment):
+    fake_runner.execute = False
+    for key, value in setup.items():
+        setattr(fake_runner, key, value)
+    result = sandbox.run_in_sandbox(_workspace(tmp_path, GOOD_WS), PYTEST_CMD)
+    assert result.skipped and not result.ok and fragment in result.stdout
+
+
+def test_the_docker_backend_only_runs_python(monkeypatch, tmp_path):
+    monkeypatch.setenv("SANDBOX_BACKEND", "docker")
+    get_settings.cache_clear()
+    result = sandbox.run_in_sandbox(_workspace(tmp_path, {"package.json": "{}"}), ["npm", "test"], lang="node")
+    assert result.skipped and "only runs Python" in result.stdout and "remote" in result.stdout
 
 
 def test_repair_status_describes_each_backend(monkeypatch):

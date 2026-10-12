@@ -94,9 +94,12 @@ drop a `def` line). See [Benchmark & results](#benchmark--results) for detail.
            └──────────────┘
 ```
 
-**Ingestion:** `repo → chunk (AST-aware) → embed (Gemini) → vector store`
+**Ingestion:** `repo → chunk → embed (Gemini) → vector store`. The chunker splits on function
+boundaries when `tree-sitter-language-pack` is installed and otherwise falls back to
+overlapping line windows (the hosted deployment uses the fallback).
 **Retrieval:** hybrid semantic + keyword with reciprocal-rank fusion.
-**Repair:** `bug → run tests → RAG → structured patch → apply → test → retry`
+**Repair:** `bug → run tests → RAG → whole-function patch → apply → test → retry`, in
+Python, JavaScript/TypeScript and Go (see [Languages, dependencies and the hosted runner](#languages-dependencies-and-the-hosted-runner)).
 
 ---
 
@@ -112,7 +115,7 @@ devpilot/
 │   │   │   ├── client.py        provider-neutral entry point (what the app imports)
 │   │   │   └── providers/       LLMProvider interface + gemini / ollama backends
 │   │   ├── rag/
-│   │   │   ├── chunker.py       AST-aware chunking (tree-sitter) + fallback
+│   │   │   ├── chunker.py       function-boundary chunking (optional tree-sitter) + line-window fallback
 │   │   │   ├── vector_store.py  memory (numpy) OR pgvector backend
 │   │   │   ├── retriever.py     hybrid search + RRF + dependency-aware expansion
 │   │   │   ├── import_graph.py  per-repo import graph (symptom → root-cause hops)
@@ -123,23 +126,29 @@ devpilot/
 │   │   │   ├── tools.py         search_code, read_file, find_references, run_tests
 │   │   │   └── prompts/         VERSIONED prompts (debugging, code_review, patch)
 │   │   ├── sandbox/
-│   │   │   ├── runner.py        isolated execution (docker/local/disabled)
-│   │   │   ├── tests.py         test-command detection + result parsing
-│   │   │   └── Dockerfile       the sandbox image
-│   │   ├── patch/patcher.py     workspace + structured patch application + git diff
+│   │   │   ├── runner.py        execution backends: docker / remote (jobs API) / local / disabled
+│   │   │   ├── tests.py         language detection, test commands, pytest/jest/vitest/mocha/node:test/go parsers
+│   │   │   └── Dockerfile       the Docker sandbox image (Python only)
+│   │   ├── patch/
+│   │   │   ├── patcher.py       workspace + whole-function patch application (Python `ast`) + git diff
+│   │   │   └── functions.py     the same for JS/TS/TSX/Go via tree-sitter (qualified names, parse guard)
+│   │   ├── auth/                accounts, sessions, rate limits, password-reset email
 │   │   ├── obs/                 lifecycle tracing (spans, tokens, redaction) + viewer
 │   │   ├── review/reviewer.py   code-review agent (structured findings)
 │   │   └── db/schema.sql        pgvector table + index
 │   ├── mcp_server/server.py     expose 7 tools over MCP (incl. patch/test loop)
 │   ├── eval/
-│   │   ├── benchmark.json       10 deterministic tasks across categories
+│   │   ├── benchmark.json       the 36-case measured Python benchmark (+ QA cases)
+│   │   ├── benchmark_multilang.json  5 JS/Go/pip-dependency cases (no pass rate recorded yet)
 │   │   ├── harness.py           full-pipeline metrics + persisted runs
 │   │   ├── report.py            renders the evaluation report
 │   │   └── run_eval.py          CLI: run / compare prompts / re-print
 │   └── cli.py                   use everything from the terminal (incl. `debug`)
-├── examples/                    10 benchmark fixture repos (each: bug + failing test)
-│   ├── sample_app/ bank_app/ cart_app/ auth_app/ inventory_app/  (single-bug)
-│   └── shopcore/ webapp/ securestore/ datapipe/ formsvc/          (multi-module)
+├── runner/                      the isolated test-runner service (Docker: Python + Node + Go)
+├── examples/                    fixture repos (each: one bug + a failing test)
+│   ├── sample_app/ bank_app/ cart_app/ auth_app/ inventory_app/  (Python, single-bug)
+│   ├── shopcore/ webapp/ securestore/ datapipe/ formsvc/          (Python, multi-module)
+│   └── js_cart/ js_text/ go_stack/ go_wallet/ py_deps/            (JavaScript, Go, pip dependency)
 ├── frontend/                    React + TypeScript chat UI
 ├── docker-compose.yml           Postgres + pgvector
 ├── requirements.txt
@@ -154,7 +163,7 @@ agent, **the MCP server** (7 tools), **lifecycle tracing**, **the evaluation
 system** (40-case benchmark across 9 categories, no-RAG baseline vs v1/v2/v3,
 full-pipeline metrics), API, CLI, and frontend. Clear extension **TODOs** (inline + in
 [Roadmap](#roadmap-next-things-to-build)): grow the benchmark to 30–50 harder
-cases + an LLM-as-judge grader, a Node/JS sandbox, and trace export to OTel.
+cases + an LLM-as-judge grader, a measured pass rate for the JS/Go repair path, and trace export to OTel.
 
 ---
 
@@ -264,7 +273,7 @@ bug report
    → copy repo into a throwaway workspace (git baseline)
    → run tests in the sandbox                    (confirm the failure)
    → retrieve relevant files (RAG) + read source
-   → LLM emits a STRUCTURED patch (root cause + exact line edits)
+   → LLM emits a STRUCTURED patch (root cause + one whole function per edit)
    → backend validates & applies the patch       (LLM never touches the FS)
    → run tests in the sandbox again
    → still failing? feed the output back, revise  (up to REPAIR_MAX_ITERS)
@@ -274,9 +283,11 @@ bug report
 Key design points to speak to in an interview:
 
 - **The LLM never edits the filesystem.** It returns a structured patch
-  (`{file, changes:[{start_line, end_line, replacement}]}`); the backend
-  validates line ranges and applies it deterministically
-  ([`patch/patcher.py`](backend/app/patch/patcher.py)). Controllable and auditable.
+  (`{file, function, new_source}`: a whole new function); the backend locates the function
+  by name (Python `ast`, or tree-sitter for JS/TS/Go), swaps it in, and rejects anything
+  that doesn't parse ([`patch/patcher.py`](backend/app/patch/patcher.py),
+  [`patch/functions.py`](backend/app/patch/functions.py)). The original line-range format is
+  still supported for the older prompts. Controllable and auditable.
 - **Tests run in an isolated sandbox** ([`sandbox/runner.py`](backend/app/sandbox/runner.py)):
   Docker with `--network=none`, memory/CPU/PID limits, a wall-clock timeout, and
   a non-root user. Same systems thinking as Docker-isolated compilation in Code
@@ -293,15 +304,100 @@ docker build -t devpilot-sandbox:latest backend/app/sandbox
 ```
 
 `SANDBOX_BACKEND` selects the executor:
-`docker` (default, isolated) · `remote` (an isolated, secret-free
+`docker` (default, isolated, Python only) · `remote` (an isolated, secret-free
 [runner service](runner) — how the hosted demo does it, since a PaaS has no Docker
 daemon) · `local` (host subprocess — **dev only, not isolated**, for when Docker isn't
 installed) · `disabled` (stub).
 
-The runner (`runner/`) runs only `python -m pytest` on an uploaded workspace, as an
-unprivileged per-slot user with resource limits, and refuses to run if it can't isolate.
-Its isolation is attacked for real in CI (privilege escape, fork/memory/disk bombs,
-stray daemons, malicious archives) against the built container.
+The runner (`runner/`) runs exactly one fixed command per language on an uploaded workspace
+(`python -m pytest`, `npm test` or `go test`), as an unprivileged per-slot user with resource
+limits, and refuses to run if it can't isolate. Its isolation is attacked for real in CI
+(privilege escape, fork/memory/disk bombs, stray daemons, malicious archives, install-time
+script and option injection) against the built container, for all three languages.
+
+### Languages, dependencies and the hosted runner
+
+Repair works on **Python, JavaScript/TypeScript and Go** repositories. The hosted demo runs
+every repair in a separate, secret-free [runner service](runner) (a PaaS has no Docker
+daemon, so isolation comes from an unprivileged per-run user, resource limits and a
+runner that holds nothing worth stealing). One runner image has all three toolchains.
+
+| | Python | JavaScript / TypeScript | Go |
+|---|---|---|---|
+| **Detected by** | `test_*.py` / `*_test.py` files | `package.json` with a `test` script | `go.mod` + `*_test.go` files |
+| **Test command (fixed)** | `python -m pytest` | `npm test` (whatever the repo's `test` script runs: node:test, jest, vitest, mocha) | `go test -v ./...` (or the requested package) |
+| **Dependencies** | `pip install --only-binary=:all:` from `requirements*.txt` and `pyproject.toml` (test/dev extras) | `npm ci --ignore-scripts` (or `npm install --ignore-scripts` without a lockfile) | `go mod download`, then tests run offline |
+| **How the fix is applied** | `ast`: replace one whole function | tree-sitter: replace one function, method, arrow function or object member (`.js .jsx .mjs .cjs .ts .tsx .mts .cts`) | tree-sitter: replace one function or method (`Type.Method`) |
+| **Prompt** | `v4` (the measured one) | `v5` | `v5` |
+
+**How a fix is made in every language.** The model never edits files. It returns the *whole
+new function*, named by its qualified name (`Cart.total`, `Stack.Pop`); the backend finds
+that function, swaps its source and refuses the patch if the result doesn't parse, if the
+bare name is ambiguous (`total` exists on two classes: the model is told to qualify it and
+retry), or if it touches a test file (`*_test.go`, `*.test.*`, `*.spec.*`, `test_*.py`).
+
+**What "installing dependencies" means here, and what it doesn't.** A failing test is only
+evidence of a code bug if the packages it imports are present, so the runner installs them
+first, and does it defensively because the repo is untrusted:
+
+- **No repo code runs at install time.** pip is restricted to wheels (so no `setup.py` ever
+  executes), npm runs with `--ignore-scripts` and from a manifest stripped of the repo's own
+  `scripts`, and Go only downloads source archives. Requirement lines that are options
+  (`--index-url`, `-r`, `-e`), URLs, VCS references or local paths are skipped and reported,
+  never passed to pip.
+- Installs run as the same unprivileged per-run user, under CPU/memory/process/file-size
+  limits, a 150-second timeout and a 300 MB size cap.
+- Results are cached by a hash of the manifest in a **read-only, root-owned** directory, so
+  the baseline run, the verification run and every retry of one repair install once, and test
+  code can read the cache but cannot modify what a later run will use.
+- If the install fails, the repair **stops before spending a model call** and reports which
+  packages failed and the log tail (`dependencies_unavailable`). It does not guess a patch
+  against tests that fail only because their packages are missing.
+
+**Limits, stated plainly**
+
+- **Network egress can't be blocked** on Render's free tier (no `CAP_SYS_ADMIN`), so a test
+  run, like an install, can reach the internet. Every runner response says
+  `network_isolated: false`. The runner holds no secrets, but run only code you'd be fine
+  executing. (The Docker backend does run with `--network=none`.)
+- Packages that ship only source (no wheel), need system libraries, native builds, a
+  database or a browser will not install or run. Full React, Next.js or Vite apps are
+  limited by the free runner's 512 MB of memory; small libraries and Node services are the
+  realistic target.
+- The Docker backend (`SANDBOX_BACKEND=docker`) is still **Python-only**; JavaScript and Go
+  need the remote runner (or `local` with Node/Go installed).
+- A runner that can't isolate (not root, no token) **refuses** to run, and a run that never
+  executed is reported as *not executed*, never as a pass.
+
+**The runner API** ([`runner/app/main.py`](runner/app/main.py)). Jobs, not one long request,
+because installing dependencies plus a test run can outlast the ~100 s a free host's edge
+allows a request:
+
+```text
+POST /jobs?lang=node&test_path=test/cart.test.js&timeout=60&install=1
+     Authorization: Bearer <RUNNER_TOKEN>      body: the workspace as a .tar.gz
+     -> 202 {"job_id"}        (503 when every slot is busy)
+GET  /jobs/{id}               -> {"status": "running|done|error", "stage", "result"?, "error"?}
+GET  /healthz                 -> {"isolation", "ready", "slots", "toolchains": {python,node,go}}
+```
+
+The backend uploads, polls every 1.5 s, and gives up with *not executed* if the runner is
+lost, restarted or too slow.
+
+**What is and isn't measured.** The **97%** figure is from the 36-case **Python**
+benchmark. The JavaScript, Go and dependency-install paths are covered by tests (the
+function-replacement logic, parsers for node:test/jest/vitest/mocha/`go test` output, the
+repair loop against a scripted runner, and attacks on the real runner container in CI), and
+there are five fixture cases in [`backend/eval/benchmark_multilang.json`](backend/eval/benchmark_multilang.json),
+but **no repair success rate has been recorded for them**, so none is claimed:
+
+```bash
+cd backend
+SANDBOX_BACKEND=local python -m eval.run_eval --benchmark benchmark_multilang.json --prompt-versions v4
+```
+
+The sample bugs in the UI's empty state (`examples/js_cart`, `js_text`, `go_stack`,
+`go_wallet`, `py_deps`) are those fixtures.
 
 ### API
 
@@ -450,12 +546,15 @@ SANDBOX_BACKEND=local python -m eval.run_eval --provider ollama --no-baseline --
 
 Result JSONs are kept under `backend/eval/results/` as the reproducible record.
 
+The five multi-language cases live in a separate file on purpose, so they can't dilute
+or inflate the Python number: `python -m eval.run_eval --benchmark benchmark_multilang.json`.
+
 ### Resume framing
 
 Lead with the *experiment*, not "an AI coding chatbot":
 
 > **DevPilot — AI Software-Engineering Agent** · Python, FastAPI, Gemini/Ollama,
-> pgvector, tree-sitter, Docker, MCP
+> pgvector, tree-sitter (JS/TS/Go patching), Docker, MCP, React
 > - Built an AI software-engineering agent that debugs GitHub repositories using
 >   **code-aware RAG, tool calling, sandboxed execution, and an automated repair
 >   loop** (search → patch → run tests → retry), with lifecycle tracing.
@@ -469,9 +568,15 @@ Lead with the *experiment*, not "an AI coding chatbot":
 > - Made the LLM layer **provider-independent** (Gemini/Ollama) so the same agent
 >   is evaluated across models; added provider-aware retry/backoff and an
 >   embedding-config guard.
+> - Extended repair to **JavaScript/TypeScript and Go** (tree-sitter whole-function
+>   patching with qualified names and a parse guard) and added a hardened
+>   **dependency-install** step to an isolated, secret-free runner (wheels-only pip,
+>   `--ignore-scripts` npm, read-only cached installs). Only the Python path is
+>   benchmarked (97%); the JS/Go path is tested but its pass rate is not measured.
 
-State it as **"97% end-to-end repair success on a 36-case benchmark"** — never
-"97% accuracy," and don't generalize beyond the benchmark.
+State it as **"97% end-to-end repair success on a 36-case Python benchmark"** — never
+"97% accuracy," don't generalize beyond the benchmark, and don't attach that number to the
+JavaScript/Go support.
 
 ---
 
@@ -647,6 +752,14 @@ Done:
   Plus retrieval-only eval that needs no generation. See [`llm/providers/`](backend/app/llm/providers).
 - ✅ **Retrieval experiment** — measured a `root-cause-differs` gap (75%→100% Recall@5) and closed
   it with dependency-aware expansion; a real hypothesis→fix→re-benchmark loop.
+- ✅ **Hosted repair** — an isolated runner service, async repair jobs with live progress, and
+  a "Fix a bug" UI with one-click sample bugs. See [`runner/`](runner).
+- ✅ **Multi-language repair** — JavaScript/TypeScript and Go (tree-sitter function patching,
+  `npm test` / `go test` parsers) plus defensive dependency installs for all three languages.
+  See [Languages, dependencies and the hosted runner](#languages-dependencies-and-the-hosted-runner).
+- ✅ **Accounts** — sign-up/login, sessions that can be revoked, rate limits, password reset by email.
+- ✅ **`google-genai` SDK** — migrated off the deprecated `google-generativeai`; supports both
+  `AIza…` and `AQ…` keys.
 - ✅ **Embedding-config guard** — each repo records its embedder; switching provider auto-re-ingests
   instead of silently querying a mismatched vector space. **Failure taxonomy** in the eval report.
 
@@ -657,10 +770,14 @@ Next, in priority order:
    table — then add an **LLM-as-judge grader** for answer quality (keyword proxy today).
 3. **Code-review context enrichment** — feed retrieved surrounding code into the
    reviewer so it sees callers/definitions the diff omits.
-4. **Node/JS sandbox** — extend the sandbox image + `detect_test_command` for jest.
-5. **Export traces to OTel/LangSmith**; **LangGraph** port of the loop.
-6. **UI**: surface the repair loop + a trace timeline in the React app.
-7. **Migrate to the `google-genai` SDK** (`google-generativeai` is deprecated).
+4. **Measure the JS/Go/dependency path** — run `benchmark_multilang.json` and grow it past
+   five cases, then report a pass rate for it separately from the Python 97%.
+5. **Real network isolation for the runner** — needs a host that grants `CAP_SYS_ADMIN`
+   (or a gVisor/Firecracker-style sandbox); today egress is open on the free tier.
+6. **More stacks**: Java/Maven, Rust, a Node runner image with a native build chain.
+7. **Export traces to OTel/LangSmith**; **LangGraph** port of the loop.
+8. **Function-boundary chunking in production** — install `tree-sitter-language-pack` and measure
+   retrieval against the line-window fallback.
 
 ---
 
@@ -680,7 +797,10 @@ Next, in priority order:
   *not executed*, never as passing.
 - `/api/traces` and `/api/review` require login; traces are visible only to the
   user who triggered them.
-- Not implemented: rate limiting, and the Docker sandbox image only supports
-  Python/pytest (JS repos need a Node image).
+- Rate limits exist (login, signup, reset, repairs per user) but are in-memory, per
+  process. The Docker sandbox image only supports Python; JavaScript and Go run on the
+  remote runner, which cannot block outbound network on a free host (see above).
+- Dependency installs execute no repo code (wheels only, `--ignore-scripts`, download-only
+  Go) but do reach public package registries.
 - Regression tests for all of the above: `cd backend && python -m pytest tests -q`.
 - Your API key stays in `.env` (gitignored). Don't commit it.

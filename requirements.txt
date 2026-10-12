@@ -24,10 +24,13 @@ bcrypt==4.2.1
 PyJWT==2.10.1
 
 # --- Code parsing ---
-# tree-sitter is optional; the chunker falls back to a regex/line splitter
-# if these aren't installed. Uncomment to enable AST-aware chunking.
-# tree-sitter==0.23.2
-# tree-sitter-language-pack==0.4.0
+# Whole-function patching for JavaScript/TypeScript/TSX/Go (app/patch/functions.py).
+# Python uses the stdlib `ast`. The chunker still uses a regex/line splitter; it would
+# use tree-sitter-language-pack if that were installed (it is not).
+tree-sitter==0.26.0
+tree-sitter-javascript==0.25.0
+tree-sitter-typescript==0.23.2
+tree-sitter-go==0.25.0
 
 # --- Repo handling ---
 GitPython==3.1.43

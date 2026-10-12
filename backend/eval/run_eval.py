@@ -6,6 +6,9 @@
     # compare prompt versions objectively (the prompt-engineering story):
     python -m eval.run_eval --prompt-versions v1,v2,v3
 
+    # the multi-language cases (JavaScript, Go, a Python repo with dependencies):
+    python -m eval.run_eval --benchmark benchmark_multilang.json --prompt-versions v4
+
     # a single case or one category (fast iteration):
     python -m eval.run_eval --only repair_overdraft
     python -m eval.run_eval --only repository-qa
@@ -46,6 +49,8 @@ def main() -> None:
     p.add_argument("--retrieval-only", action="store_true",
                    help="score retrieval (Recall@K/MRR/file-hit) with NO generation")
     p.add_argument("--report", default=None, help="re-print a saved run JSON and exit")
+    p.add_argument("--benchmark", default=None,
+                   help="benchmark file to use instead of benchmark.json, e.g. benchmark_multilang.json")
     args = p.parse_args()
 
     if args.report:
@@ -55,6 +60,12 @@ def main() -> None:
 
     if args.provider:
         set_provider(args.provider)
+
+    if args.benchmark:
+        import os
+        from eval import harness
+        harness.BENCHMARK = (args.benchmark if os.path.isabs(args.benchmark)
+                             else os.path.join(harness._HERE, args.benchmark))
 
     if args.retrieval_only:
         run = run_retrieval_eval(only=args.only)

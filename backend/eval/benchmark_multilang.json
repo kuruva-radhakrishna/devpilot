@@ -1,0 +1,57 @@
+{
+  "description": "DevPilot multi-language repair cases (JavaScript, Go, and a Python repo with a pip dependency). NOT part of the measured 36-case benchmark: these exist so the multi-language path can be measured, and no pass rate has been recorded for them yet. Run with: python -m eval.run_eval --benchmark benchmark_multilang.json --prompt-versions v4 (v4 resolves to the v5 prompt for non-Python repos). They need SANDBOX_BACKEND=remote against a runner that has Node and Go, or SANDBOX_BACKEND=local with node/go installed.",
+  "repos": {
+    "js_cart": "examples/js_cart",
+    "js_text": "examples/js_text",
+    "go_stack": "examples/go_stack",
+    "go_wallet": "examples/go_wallet",
+    "py_deps": "examples/py_deps"
+  },
+  "cases": [
+    {
+      "id": "repair_js_cart_total",
+      "type": "repair",
+      "category": "javascript",
+      "repo": "js_cart",
+      "bug": "A cart with 3 items at 10 and 1 item at 5 totals 15 instead of 35; the quantity of each line is ignored.",
+      "expected_files": ["src/cart.js"],
+      "test_path": "test/cart.test.js"
+    },
+    {
+      "id": "repair_js_slugify",
+      "type": "repair",
+      "category": "javascript",
+      "repo": "js_text",
+      "bug": "slugify('Hello, World!') returns 'hello-world-' with a trailing dash; leading and trailing punctuation should not leave dashes.",
+      "expected_files": ["src/text.js"],
+      "test_path": "test/text.test.js"
+    },
+    {
+      "id": "repair_go_stack_pop",
+      "type": "repair",
+      "category": "go",
+      "repo": "go_stack",
+      "bug": "Calling Pop on an empty Stack panics with an index out of range; it should return 0 and false.",
+      "expected_files": ["stack/stack.go"],
+      "test_path": "./stack"
+    },
+    {
+      "id": "repair_go_wallet_overdraft",
+      "type": "repair",
+      "category": "go",
+      "repo": "go_wallet",
+      "bug": "Withdrawing more than the wallet holds succeeds and leaves a negative balance; it should return ErrInsufficientFunds and leave the balance unchanged.",
+      "expected_files": ["wallet/wallet.go"],
+      "test_path": "./wallet"
+    },
+    {
+      "id": "repair_py_deps_get",
+      "type": "repair",
+      "category": "python-dependencies",
+      "repo": "py_deps",
+      "bug": "settings.get raises a TypeError for a dotted path whose parent is a number, such as db.port.number; it should return the default.",
+      "expected_files": ["settings.py"],
+      "test_path": "tests/test_settings.py"
+    }
+  ]
+}

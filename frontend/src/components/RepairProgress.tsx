@@ -8,6 +8,7 @@ function rowState(e: RepairEvent & { skipped?: boolean }, isLast: boolean, runni
   if (e.stage === "attempt_failed") return "bad";
   if (e.stage === "verify_done" && e.passed === false) return "bad";
   if (e.stage === "baseline_done" && e.skipped) return "bad";
+  if (e.stage === "deps_failed") return "bad";
   // A failing baseline is the point: it means the bug was reproduced.
   return "ok";
 }
@@ -16,6 +17,7 @@ const LABEL: Record<string, string> = {
   warm: "Wake the runner",
   baseline: "Reproduce",
   baseline_done: "Reproduce",
+  deps_failed: "Install dependencies",
   retrieval: "Find the code",
   retrieval_done: "Find the code",
   attempt: "Propose a fix",

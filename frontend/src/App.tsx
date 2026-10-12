@@ -184,14 +184,14 @@ function EmptyState({ source, setSource, ingestBusy, onIngest, repairEnabled, re
                 <button type="button" className="ex" key={s.source} disabled={ingestBusy || repairBusy}
                   onClick={() => onTrySample(s)}>
                   <span>
-                    <span className="ex-title">{s.title}</span>
+                    <span className="ex-title">{s.title}<span className="ex-lang">{s.lang}</span></span>
                     <span className="ex-note">{s.note}</span>
                   </span>
                   <IconWrench className="ex-arrow" width={16} height={16} />
                 </button>
               ))}
             </div>
-            <div className="hint">One click: it indexes the sample, reproduces the failing test, patches it, and re-runs the tests.</div>
+            <div className="hint">One click: it indexes the sample, reproduces the failing test, patches it, and re-runs the tests. Python, JavaScript and Go work.</div>
             <h2 className="eyebrow">Or bring your own repo</h2>
           </>
         )}

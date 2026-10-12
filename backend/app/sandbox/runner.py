@@ -10,7 +10,8 @@ repo with three backends selected by SANDBOX_BACKEND:
   "local"    -> plain subprocess on the host. NOT isolated. Dev convenience only,
                 for when Docker isn't available; prints a loud warning.
   "remote"   -> a separate, secret-free runner service (see /runner) that runs
-                pytest on an uploaded copy of the workspace. This is how the hosted
+                the repo's tests (pytest, npm test or go test) on an uploaded copy of
+                the workspace, after installing its dependencies. This is how the hosted
                 demo runs repairs: a PaaS has no Docker daemon, so isolation comes
                 from the runner's unprivileged uid + resource limits instead.
   "disabled" -> returns a stub (original skeleton behavior).
@@ -64,6 +65,10 @@ class SandboxResult:
     # True when no tests actually ran (sandbox disabled/blocked). A skipped run is
     # never "ok" — it must not be mistaken for a passing test suite.
     skipped: bool = False
+    # Dependency installation (remote runner only): a one-line description, and whether it
+    # failed. A failed install means the tests ran without their packages.
+    install_note: str = ""
+    install_failed: bool = False
 
     @property
     def ok(self) -> bool:
@@ -102,11 +107,18 @@ def run_in_sandbox(
     *,
     timeout: int | None = None,
     allow_network: bool = False,
+    lang: str = "python",
+    test_path: str = "",
+    install: bool = False,
 ) -> SandboxResult:
     """Run `command` with CWD = workspace_dir under the configured sandbox.
 
     allow_network is used only for an optional dependency-install phase; the test
     phase always runs with the network disabled.
+
+    `lang`, `test_path` and `install` matter to the remote backend, which is told the
+    language and test target rather than a command (it runs one fixed command per
+    language) and can install the repo's dependencies first.
     """
     s = get_settings()
     backend = s.sandbox_backend.lower()
@@ -126,7 +138,13 @@ def run_in_sandbox(
             )
         return _run_local(workspace_dir, command, timeout)
     if backend == "remote":
-        return _run_remote(workspace_dir, command, timeout)
+        return _run_remote(workspace_dir, command, timeout, lang=lang, test_path=test_path, install=install)
+    if lang != "python":
+        return SandboxResult(
+            1, f"The Docker sandbox image only runs Python tests. Use SANDBOX_BACKEND=remote "
+               f"(the DevPilot runner) for {lang} repositories.", "",
+            False, "docker", skipped=True,
+        )
     return _run_docker(workspace_dir, command, timeout, allow_network)
 
 
@@ -206,7 +224,26 @@ def _wake_runner(base_url: str, wait_seconds: int) -> str | None:
             time.sleep(3)
 
 
-def _run_remote(workspace_dir: str, command: list[str], timeout: int) -> SandboxResult:
+_REMOTE_COMMANDS = {"python": ["python", "-m", "pytest"], "node": ["npm", "test"], "go": ["go", "test"]}
+_INSTALL_BUDGET = 150   # the runner's own install limit, so our deadline outlasts it
+_POLL_EVERY = 1.5
+
+
+def _install_note(info: dict | None) -> tuple[str, bool]:
+    """(one-line description of the dependency install, whether it failed)."""
+    if not isinstance(info, dict) or not info.get("ran"):
+        return "", False
+    summary = str(info.get("summary") or "").strip()
+    if info.get("ok", True):
+        return summary, False
+    failed = info.get("failed") or []
+    extra = f" ({', '.join(str(f) for f in failed[:8])})" if failed else ""
+    log = str(info.get("log") or "").strip()
+    return summary + extra + (f"\n{log[-1200:]}" if log else ""), True
+
+
+def _run_remote(workspace_dir: str, command: list[str], timeout: int, *, lang: str = "python",
+                test_path: str = "", install: bool = False) -> SandboxResult:
     s = get_settings()
 
     def skipped(message: str) -> SandboxResult:
@@ -215,9 +252,9 @@ def _run_remote(workspace_dir: str, command: list[str], timeout: int) -> Sandbox
 
     if not (s.sandbox_url and s.sandbox_token):
         return skipped("The remote test runner isn't configured on this server.")
-    if command[1:3] != ["-m", "pytest"]:
-        return skipped("The remote runner only runs pytest suites.")
-    test_path = command[-1] if len(command) > 4 and not command[-1].startswith("-") else ""
+    expected = _REMOTE_COMMANDS.get(lang)
+    if expected is None or command[:len(expected)] != expected:
+        return skipped("The remote runner only runs pytest, npm test or go test suites.")
 
     archive = _tar_workspace(workspace_dir)
     if archive is None:
@@ -227,31 +264,71 @@ def _run_remote(workspace_dir: str, command: list[str], timeout: int) -> Sandbox
     problem = _wake_runner(base, s.sandbox_wake_seconds)
     if problem:
         return skipped(problem)
+
+    run_timeout = min(int(timeout), 120)
+    headers = {"Authorization": f"Bearer {s.sandbox_token}"}
     try:
         r = httpx.post(
-            f"{base}/run", params={"test_path": test_path, "timeout": min(int(timeout), 120)},
-            content=archive, headers={"Authorization": f"Bearer {s.sandbox_token}"},
-            timeout=httpx.Timeout(connect=15, read=min(int(timeout), 120) + 40, write=60, pool=15),
+            f"{base}/jobs",
+            params={"lang": lang, "test_path": test_path, "timeout": run_timeout,
+                    "install": "1" if install else "0"},
+            content=archive, headers=headers,
+            timeout=httpx.Timeout(connect=15, read=60, write=60, pool=15),
         )
     except httpx.HTTPError as exc:
         return skipped(f"Couldn't reach the test runner ({type(exc).__name__}).")
 
-    if r.status_code == 200:
+    if r.status_code != 202:
         try:
-            body = r.json()
-            return SandboxResult(int(body["returncode"]), str(body.get("output", "")), "",
-                                 bool(body.get("timed_out")), "remote")
+            detail = str(r.json().get("detail", ""))
+        except ValueError:
+            detail = ""
+        if r.status_code in (401, 403):
+            return skipped("The test runner rejected this server's token. Check SANDBOX_TOKEN.")
+        if r.status_code == 503:
+            return skipped(detail or "The test runner is busy. Try again in a moment.")
+        return skipped(f"The test runner refused the run (HTTP {r.status_code}): {detail}".strip())
+
+    try:
+        job_id = str(r.json()["job_id"])
+    except (ValueError, KeyError, TypeError):
+        return skipped("The test runner sent back something unreadable.")
+
+    # Poll. No single request is ever long, so no proxy's idle timeout can cut it off.
+    deadline = time.monotonic() + run_timeout + (_INSTALL_BUDGET if install else 0) + 60
+    failures = 0
+    while time.monotonic() < deadline:
+        time.sleep(_POLL_EVERY)
+        try:
+            p = httpx.get(f"{base}/jobs/{job_id}", headers=headers, timeout=20)
+        except httpx.HTTPError:
+            failures += 1
+            if failures >= 6:
+                return skipped("Lost contact with the test runner while the tests were running.")
+            continue
+        failures = 0
+        if p.status_code == 404:
+            return skipped("The test runner lost this run (it probably restarted). Try again.")
+        if p.status_code != 200:
+            return skipped(f"The test runner failed while running the tests (HTTP {p.status_code}).")
+        try:
+            body = p.json()
+            status = body["status"]
         except (ValueError, KeyError, TypeError):
             return skipped("The test runner sent back something unreadable.")
-    try:
-        detail = str(r.json().get("detail", ""))
-    except ValueError:
-        detail = ""
-    if r.status_code in (401, 403):
-        return skipped("The test runner rejected this server's token. Check SANDBOX_TOKEN.")
-    if r.status_code == 503:
-        return skipped(detail or "The test runner is busy. Try again in a moment.")
-    return skipped(f"The test runner refused the run (HTTP {r.status_code}): {detail}".strip())
+        if status == "running":
+            continue
+        if status == "error":
+            return skipped(str(body.get("error") or "The test runner failed to run this repository."))
+        try:
+            res = body["result"]
+            note, install_failed = _install_note(res.get("install"))
+            return SandboxResult(int(res["returncode"]), str(res.get("output", "")), "",
+                                 bool(res.get("timed_out")), "remote",
+                                 install_note=note, install_failed=install_failed)
+        except (KeyError, TypeError, ValueError, AttributeError):
+            return skipped("The test runner sent back something unreadable.")
+    return skipped("The test runner took too long to answer. Try again in a moment.")
 
 
 # --------------------------------------------------------------------------- #

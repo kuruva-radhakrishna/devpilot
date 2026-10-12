@@ -56,5 +56,5 @@ services:
     envVars:
       - key: RUNNER_TOKEN
         generateValue: true
-      - key: RUNNER_SLOTS
-        value: "2"
+      - key: RUNNER_SLOTS          # one run at a time: the free instance has 512 MB, and a
+        value: "1"                 # Node or Go test run can use a large share of it

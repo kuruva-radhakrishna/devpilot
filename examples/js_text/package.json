@@ -1,0 +1,10 @@
+{
+  "name": "js-text",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "DevPilot sample: ES-module text helpers written as arrow functions, with one real bug and a failing node:test suite.",
+  "scripts": {
+    "test": "node --test"
+  }
+}
