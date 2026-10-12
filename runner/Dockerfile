@@ -24,6 +24,15 @@ RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
 COPY --from=golang /usr/local/go /usr/local/go
 ENV PATH="${PATH}:/usr/local/go/bin" GOTOOLCHAIN=local
 
+# Pre-warm a Go build cache with the standard library compiled for tests, so a run doesn't
+# recompile it (slow on a small host, and it would fill the per-run disk cap). Each run gets
+# its own writable copy; see app/sandbox.py.
+RUN mkdir -p /tmp/warm /opt/gocache-seed && cd /tmp/warm \
+    && printf 'module warm\n\ngo 1.22\n' > go.mod \
+    && printf 'package warm\n\nimport (\n\t"bufio"\n\t"bytes"\n\t"context"\n\t"encoding/json"\n\t"errors"\n\t"fmt"\n\t"io"\n\t"math"\n\t"math/rand"\n\t"os"\n\t"path/filepath"\n\t"regexp"\n\t"sort"\n\t"strconv"\n\t"strings"\n\t"sync"\n\t"testing"\n\t"time"\n\t"unicode"\n)\n\nfunc TestWarm(t *testing.T) {\n\t_, _, _, _, _, _, _, _, _ = bufio.NewReader, bytes.NewBuffer, context.Background, json.Marshal, io.EOF, math.Pi, rand.Int, os.Getpid, filepath.Join\n\t_, _, _, _, _, _, _, _ = regexp.MustCompile, sort.Ints, strconv.Itoa, strings.ToUpper, time.Now, unicode.IsLetter, errors.New, fmt.Sprint\n\tvar m sync.Mutex\n\tm.Lock()\n}\n' > warm_test.go \
+    && GOCACHE=/opt/gocache-seed CGO_ENABLED=0 GOFLAGS=-buildvcs=false go test ./... \
+    && chmod -R a+rX /opt/gocache-seed && rm -rf /tmp/warm
+
 WORKDIR /srv
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt pytest==8.3.4 \

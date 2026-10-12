@@ -208,7 +208,7 @@ def test_node_dependencies_install_without_running_any_scripts():
 def test_go_dependencies_are_downloaded_for_an_offline_test_run():
     files = {"go.mod": "module example.com/t\n\ngo 1.22\n\nrequire github.com/google/uuid v1.6.0\n",
              "go.sum": "github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=\n"
-                       "github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEZXEzp8m6ErZw8vaOm0=\n",
+                       "github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=\n",
              "id_test.go": 'package t\n\nimport (\n\t"testing"\n\n\t"github.com/google/uuid"\n)\n\n'
                            'func TestID(t *testing.T) {\n\tif uuid.New().String() == "" {\n\t\tt.Fatal("empty")\n\t}\n}\n'}
     body = passes(files, lang="go", install=True, timeout=120)

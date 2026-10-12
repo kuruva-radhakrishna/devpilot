@@ -54,6 +54,9 @@ GO_MEM_BYTES = int(os.environ.get("RUNNER_GO_MEM_MB", "800")) * 1024 * 1024
 SLOTS = max(1, int(os.environ.get("RUNNER_SLOTS", "2")))
 BASE_UID = int(os.environ.get("RUNNER_BASE_UID", "20000"))
 RUNS_DIR = os.environ.get("RUNNER_RUNS_DIR", "/tmp/dp-runs")
+# A Go build cache with the standard library already compiled (built into the image). Without
+# it every run recompiles the stdlib, which is slow on a small host and fills the disk cap.
+GO_CACHE_SEED = os.environ.get("RUNNER_GO_CACHE_SEED", "/opt/gocache-seed")
 
 _TEST_PATH_RE = re.compile(r"^[A-Za-z0-9_@][A-Za-z0-9_./:\[\]@+\-]*$")
 _GO_PKG_RE = re.compile(r"^\./[A-Za-z0-9_./\-]*(\.\.\.)?$")
@@ -230,6 +233,28 @@ def _chown_tree(root: str, uid: int) -> None:
                 pass
 
 
+_seed_bytes: int | None = None
+
+
+def _go_cache_seed_bytes() -> int:
+    global _seed_bytes
+    if _seed_bytes is None:
+        _seed_bytes = _dir_size(GO_CACHE_SEED, 10**12) if os.path.isdir(GO_CACHE_SEED) else 0
+    return _seed_bytes
+
+
+def _prepare_go_cache(run_root: str, uid: int, isolated: bool) -> str:
+    """A private, writable copy of the pre-warmed Go build cache for this run ("" when the
+    image has none). It lives beside the workspace, not in it, and is owned by the run's uid."""
+    if not os.path.isdir(GO_CACHE_SEED):
+        return ""
+    dest = os.path.join(run_root, "gocache")
+    shutil.copytree(GO_CACHE_SEED, dest, symlinks=True)
+    if isolated:
+        _chown_tree(dest, uid)
+    return dest
+
+
 def _link_dependencies(target: str, link: str) -> None:
     """Expose a cached, read-only dependency tree inside the workspace. `node_modules` becomes
     a real directory of per-package symlinks rather than one symlink, because tools such as
@@ -287,7 +312,7 @@ def limit_args(lang: str, phase: str, timeout_s: int) -> list[str]:
 _BASE_PATH = "/usr/local/bin:/usr/local/go/bin:/usr/bin:/bin"
 
 
-def test_env(lang: str, ws: str, deps: "deps_mod.DepsResult") -> dict:
+def test_env(lang: str, ws: str, deps: "deps_mod.DepsResult", gocache: str = "") -> dict:
     env = {
         "PATH": _BASE_PATH, "HOME": ws, "TMPDIR": os.path.join(ws, ".tmp"),
         "LANG": "C.UTF-8", "CI": "true", "NO_COLOR": "1",
@@ -304,7 +329,7 @@ def test_env(lang: str, ws: str, deps: "deps_mod.DepsResult") -> dict:
                     "NODE_OPTIONS": f"--max-old-space-size={max(128, NODE_MEM_BYTES // (1024 * 1024) // 2)}"})
     else:
         env.update({
-            "GOCACHE": os.path.join(ws, ".gocache"), "GOPATH": os.path.join(ws, ".gopath"),
+            "GOCACHE": gocache or os.path.join(ws, ".gocache"), "GOPATH": os.path.join(ws, ".gopath"),
             "GOMODCACHE": deps.env.get("GOMODCACHE", os.path.join(ws, ".gopath", "pkg", "mod")),
             "GOFLAGS": "-buildvcs=false -p=1", "GOPROXY": "off", "GOSUMDB": "off", "GOTOOLCHAIN": "local",
             "CGO_ENABLED": "0", "GOMAXPROCS": "2", "GOMEMLIMIT": f"{GO_MEM_BYTES // (1024 * 1024) // 2}MiB",
@@ -389,10 +414,13 @@ def run_job(*, slot: int, archive: bytes, lang: str, test_path: str, timeout: fl
             _chown_tree(ws, uid)
             os.chmod(ws, 0o700)
 
+        gocache = _prepare_go_cache(run_root, uid, isolated) if lang == "go" else ""
         set_stage("testing")
+        # With a Go cache beside the workspace, watch both and allow for the seed's own size.
+        watch, allowed = (run_root, MAX_DISK_BYTES + _go_cache_seed_bytes()) if gocache else (ws, MAX_DISK_BYTES)
         rc, killed, seconds = _supervise(
-            test_command(lang, test_path), cwd=ws, env=test_env(lang, ws, installed),
-            timeout=timeout_s, out_path=out_path, watch_dir=ws, max_disk=MAX_DISK_BYTES,
+            test_command(lang, test_path), cwd=ws, env=test_env(lang, ws, installed, gocache),
+            timeout=timeout_s, out_path=out_path, watch_dir=watch, max_disk=allowed,
             phase="test", uid=uid, isolated=isolated, lang=lang)
 
         text = _read_tail(out_path, MAX_OUTPUT_BYTES)
